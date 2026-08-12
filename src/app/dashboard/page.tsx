@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LogoutButton } from "@/components/logout-button";
 import { getAccessContext } from "@/lib/access/context";
@@ -6,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 type NavItem = {
   label: string;
+  href: string;
   permission?: string;
   badge?: string;
 };
@@ -14,24 +16,24 @@ const navigation: Array<{ section: string; items: NavItem[] }> = [
   {
     section: "Utama",
     items: [
-      { label: "Dashboard", permission: "DASHBOARD_VIEW" },
-      { label: "Hari Ini", permission: "DASHBOARD_VIEW", badge: "Soon" },
+      { label: "Dashboard", href: "/dashboard", permission: "DASHBOARD_VIEW" },
+      { label: "Hari Ini", href: "/dashboard", permission: "DASHBOARD_VIEW", badge: "Soon" },
     ],
   },
   {
     section: "Operasional",
     items: [
-      { label: "POS / Teller", permission: "POS_ACCESS", badge: "Next" },
-      { label: "Anggota", permission: "MEMBER_VIEW", badge: "Next" },
-      { label: "Inventory", permission: "INVENTORY_VIEW", badge: "Soon" },
+      { label: "POS / Teller", href: "/teller", permission: "POS_ACCESS", badge: "Phase 1" },
+      { label: "Anggota", href: "/members", permission: "MEMBER_VIEW", badge: "Live" },
+      { label: "Inventory", href: "/dashboard", permission: "INVENTORY_VIEW", badge: "Soon" },
     ],
   },
   {
     section: "Kontrol",
     items: [
-      { label: "Keuangan", permission: "FINANCE_VIEW", badge: "Soon" },
-      { label: "Approval", permission: "APPROVAL_VIEW", badge: "Soon" },
-      { label: "Laporan", permission: "REPORT_VIEW", badge: "Soon" },
+      { label: "Keuangan", href: "/dashboard", permission: "FINANCE_VIEW", badge: "Soon" },
+      { label: "Approval", href: "/dashboard", permission: "APPROVAL_VIEW", badge: "Soon" },
+      { label: "Laporan", href: "/dashboard", permission: "REPORT_VIEW", badge: "Soon" },
     ],
   },
 ];
@@ -69,14 +71,14 @@ export default async function DashboardPage() {
               <section className="nav-group" key={group.section}>
                 <p>{group.section}</p>
                 {visibleItems.map((item, index) => (
-                  <button
-                    type="button"
+                  <Link
+                    href={item.href}
                     className={`nav-item ${group.section === "Utama" && index === 0 ? "active" : ""}`}
                     key={item.label}
                   >
                     <span>{item.label}</span>
                     {item.badge ? <small>{item.badge}</small> : null}
-                  </button>
+                  </Link>
                 ))}
               </section>
             );
@@ -111,10 +113,10 @@ export default async function DashboardPage() {
         <div className="workspace-content">
           <section className="welcome-panel">
             <div>
-              <p className="eyebrow dashboard-eyebrow">PHASE 0.4 · ACCESS CONTROL</p>
-              <h2>Fondasi akses sudah mengenali organisasi dan kewenangan Anda.</h2>
+              <p className="eyebrow dashboard-eyebrow">PHASE 1 · MEMBER + TELLER FOUNDATION</p>
+              <h2>Master anggota sudah aktif dan workspace Teller PC mulai tersedia.</h2>
               <p>
-                Dashboard ini membaca session, profil, organisasi, role, unit scope, dan permission langsung dari Supabase dengan RLS aktif.
+                Data anggota sekarang dilindungi RLS dan permission. Transaksi uang masih ditahan sampai D1 transaction engine, inventory ledger, cash drawer, dan accounting posting siap.
               </p>
             </div>
             <div className="role-chip">
@@ -150,19 +152,19 @@ export default async function DashboardPage() {
             <article className="panel-card next-panel">
               <div className="panel-heading">
                 <div>
-                  <span className="panel-label">NEXT BUILD</span>
+                  <span className="panel-label">PHASE 1 ACTIVE</span>
                   <h3>Workspace Teller PC</h3>
                 </div>
-                <span className="panel-pill">Phase 1</span>
+                <span className="panel-pill">Member Ready</span>
               </div>
               <p>
-                Langkah berikutnya adalah master anggota, produk, dan fondasi transaksi teller sebelum POS menerima transaksi nyata.
+                Member master dan pencarian teller sudah dapat diuji. Tahap berikutnya adalah D1, product master, inventory ledger, lalu cash drawer.
               </p>
               <div className="step-list">
-                <div><b>01</b><span>Member master & pencarian cepat</span></div>
-                <div><b>02</b><span>Product & inventory foundation</span></div>
-                <div><b>03</b><span>Teller shift & cash drawer</span></div>
-                <div><b>04</b><span>POS transaction pipeline</span></div>
+                <div><b>01</b><span>Member master & pencarian cepat ✓</span></div>
+                <div><b>02</b><span>D1 transaction engine</span></div>
+                <div><b>03</b><span>Product & inventory foundation</span></div>
+                <div><b>04</b><span>Teller shift & POS pipeline</span></div>
               </div>
             </article>
 
@@ -184,11 +186,11 @@ export default async function DashboardPage() {
       </section>
 
       <nav className="mobile-bottom-nav" aria-label="Navigasi mobile">
-        <button className="active" type="button"><span>⌂</span>Beranda</button>
-        <button type="button"><span>▣</span>Tugas</button>
-        <button type="button"><span>✓</span>Approval</button>
-        <button type="button"><span>▤</span>Laporan</button>
-        <button type="button"><span>•••</span>Lainnya</button>
+        <Link className="active" href="/dashboard"><span>⌂</span>Beranda</Link>
+        <Link href="/teller"><span>▣</span>Teller</Link>
+        <Link href="/members"><span>◎</span>Anggota</Link>
+        <Link href="/dashboard"><span>▤</span>Laporan</Link>
+        <Link href="/dashboard"><span>•••</span>Lainnya</Link>
       </nav>
     </main>
   );
