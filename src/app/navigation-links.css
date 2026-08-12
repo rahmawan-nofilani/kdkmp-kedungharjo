@@ -1,0 +1,30 @@
+.nav-item {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .mobile-bottom-nav a {
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 3px;
+    border: 0;
+    background: transparent;
+    color: #8a94a3;
+    font-size: 9px;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .mobile-bottom-nav a span {
+    color: #778293;
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .mobile-bottom-nav a.active,
+  .mobile-bottom-nav a.active span {
+    color: #c21e2a;
+  }
+}
