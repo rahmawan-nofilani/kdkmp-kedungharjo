@@ -5,6 +5,21 @@ import { redirect } from "next/navigation";
 import { getAccessContext } from "@/lib/access/context";
 import { initializeTransactionCore } from "@/lib/d1/bootstrap";
 
+function diagnosticParams(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = message.match(/^D1_BOOTSTRAP_STEP_(\d+):\s*(.*)$/s);
+
+  if (!match) {
+    return new URLSearchParams({ error: "database", detail: message.slice(0, 180) });
+  }
+
+  return new URLSearchParams({
+    error: "database",
+    step: match[1],
+    detail: match[2].slice(0, 180),
+  });
+}
+
 export async function initializeD1() {
   const access = await getAccessContext();
   if (!access) redirect("/login");
@@ -21,7 +36,7 @@ export async function initializeD1() {
       : "/setup/database?status=initialized";
   } catch (error) {
     console.error("D1 initialization failed", error);
-    destination = "/setup/database?error=database";
+    destination = `/setup/database?${diagnosticParams(error).toString()}`;
   }
 
   redirect(destination);
