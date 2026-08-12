@@ -10,13 +10,19 @@ export async function initializeD1() {
   if (!access) redirect("/login");
   if (!access.permissions.includes("ORG_MANAGE")) redirect("/dashboard");
 
+  let destination = "/setup/database?status=initialized";
+
   try {
     const result = await initializeTransactionCore();
     revalidatePath("/setup/database");
     revalidatePath("/teller");
-    redirect(result.alreadyInitialized ? "/setup/database?status=ready" : "/setup/database?status=initialized");
+    destination = result.alreadyInitialized
+      ? "/setup/database?status=ready"
+      : "/setup/database?status=initialized";
   } catch (error) {
     console.error("D1 initialization failed", error);
-    redirect("/setup/database?error=database");
+    destination = "/setup/database?error=database";
   }
+
+  redirect(destination);
 }
