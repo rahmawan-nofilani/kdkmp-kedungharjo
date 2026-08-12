@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function HomePage() {
   return (
     <main className="shell">
@@ -14,6 +16,9 @@ export default function HomePage() {
             <strong>Foundation online</strong>
             <p>Belum menggunakan data anggota atau transaksi nyata.</p>
           </div>
+        </div>
+        <div className="hero-actions">
+          <Link className="primary-link" href="/login">Masuk ke Development</Link>
         </div>
       </section>
     </main>
