@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAccessContext } from "@/lib/access/context";
+import { getD1SchemaStatus } from "@/lib/d1/context";
 import { createClient } from "@/lib/supabase/server";
 import styles from "./teller.module.css";
 
@@ -12,11 +13,14 @@ export default async function TellerPage() {
   if (!access.permissions.includes("POS_ACCESS")) redirect("/dashboard");
 
   const supabase = await createClient();
-  const { count: memberCount } = await supabase
-    .from("members")
-    .select("id", { count: "exact", head: true })
-    .eq("organization_id", access.organization.id)
-    .eq("status", "ACTIVE");
+  const [{ count: memberCount }, d1] = await Promise.all([
+    supabase
+      .from("members")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", access.organization.id)
+      .eq("status", "ACTIVE"),
+    getD1SchemaStatus(),
+  ]);
 
   return (
     <main className={styles.page}>
@@ -29,6 +33,7 @@ export default async function TellerPage() {
           </div>
         </div>
         <div className={styles.topActions}>
+          {access.permissions.includes("ORG_MANAGE") ? <Link href="/setup/database">D1 Setup</Link> : null}
           <Link href="/members">Anggota</Link>
           <Link href="/dashboard">Dashboard</Link>
         </div>
@@ -81,14 +86,23 @@ export default async function TellerPage() {
             <div className={styles.readiness}>
               <div><span>Authentication & RBAC</span><strong className={styles.ready}>READY</strong></div>
               <div><span>Member master</span><strong className={styles.ready}>READY</strong></div>
-              <div><span>D1 transaction database</span><strong className={styles.wait}>NEXT</strong></div>
-              <div><span>Product & inventory ledger</span><strong className={styles.block}>BLOCKED</strong></div>
+              <div>
+                <span>D1 transaction database</span>
+                <strong className={d1.initialized ? styles.ready : d1.bound ? styles.wait : styles.block}>
+                  {d1.initialized ? "READY" : d1.bound ? "INITIALIZE" : "PROVISIONING"}
+                </strong>
+              </div>
+              <div><span>Product & inventory ledger</span><strong className={d1.initialized ? styles.wait : styles.block}>{d1.initialized ? "NEXT" : "BLOCKED"}</strong></div>
               <div><span>Cash drawer & shift</span><strong className={styles.block}>BLOCKED</strong></div>
               <div><span>POS commit + journal</span><strong className={styles.block}>BLOCKED</strong></div>
             </div>
-            <p className={styles.note}>
-              Tidak ada transaksi uang nyata yang dapat diposting dari layar ini pada Phase 1 awal.
-            </p>
+            {access.permissions.includes("ORG_MANAGE") && !d1.initialized ? (
+              <p className={styles.note}>
+                Manager dapat membuka menu D1 Setup setelah deployment terbaru aktif, lalu menjalankan bootstrap schema satu kali.
+              </p>
+            ) : (
+              <p className={styles.note}>Tidak ada transaksi uang nyata yang dapat diposting sampai seluruh gate transaksi berstatus READY.</p>
+            )}
           </aside>
         </section>
       </div>
