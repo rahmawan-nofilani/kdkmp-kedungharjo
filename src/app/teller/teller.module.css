@@ -1,0 +1,71 @@
+.page {
+  min-height: 100vh;
+  background: #eef2f5;
+  color: #172033;
+}
+
+.topbar {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 24px;
+  background: #0f1f30;
+  color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.brand { display: flex; align-items: center; gap: 11px; }
+.mark { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 11px; background: #c21e2a; font-size: 12px; font-weight: 900; }
+.brand strong { display: block; font-size: 13px; }
+.brand span { display: block; margin-top: 2px; color: #8fa0b3; font-size: 10px; }
+.topActions { display: flex; gap: 8px; }
+.topActions a { min-height: 38px; display: inline-flex; align-items: center; padding: 0 13px; border: 1px solid rgba(255,255,255,.14); border-radius: 9px; color: #e7edf5; text-decoration: none; font-size: 11px; font-weight: 800; }
+
+.content { width: min(1440px,100%); margin: 0 auto; padding: 22px 24px 48px; }
+.hero { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 24px; align-items: end; padding: 24px 26px; border: 1px solid #d9e0e6; border-radius: 17px; background: #fff; }
+.kicker { margin: 0 0 7px; color: #9d7427; font-size: 9px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+.hero h1 { margin: 0; color: #111827; font-size: clamp(28px,4vw,44px); letter-spacing: -.04em; }
+.hero p:last-child { margin: 10px 0 0; max-width: 760px; color: #687385; font-size: 12px; line-height: 1.65; }
+.role { min-width: 180px; padding: 14px 16px; border-radius: 13px; background: #f6f8fa; border: 1px solid #e1e6eb; }
+.role span { display: block; color: #7c8797; font-size: 9px; text-transform: uppercase; font-weight: 800; letter-spacing: .08em; }
+.role strong { display: block; margin-top: 5px; color: #1b2638; font-size: 16px; }
+
+.grid { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(310px,.5fr); gap: 16px; margin-top: 16px; }
+.card { padding: 20px; border: 1px solid #d9e0e6; border-radius: 15px; background: #fff; }
+.card h2 { margin: 0; font-size: 19px; letter-spacing: -.025em; }
+.card > p { margin: 8px 0 0; color: #748091; font-size: 11px; line-height: 1.6; }
+
+.lookup { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 18px; }
+.lookup input { min-height: 50px; padding: 0 15px; border: 1px solid #d4dce4; border-radius: 11px; outline: none; font-size: 13px; }
+.lookup input:focus { border-color: #b78d3d; box-shadow: 0 0 0 3px rgba(194,153,75,.12); }
+.lookup button { min-width: 110px; border: 0; border-radius: 11px; background: #0f1f30; color: #fff; font-size: 11px; font-weight: 900; cursor: pointer; }
+
+.quickGrid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 16px; }
+.quick { min-height: 100px; display: flex; flex-direction: column; justify-content: space-between; padding: 15px; border: 1px solid #e0e5ea; border-radius: 12px; background: #f9fafb; text-decoration: none; }
+.quick span { color: #8a95a4; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: .07em; }
+.quick strong { color: #263247; font-size: 13px; }
+
+.readiness { display: grid; gap: 9px; margin-top: 16px; }
+.readiness div { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 11px 12px; border-radius: 10px; background: #f7f9fb; }
+.readiness span { color: #556175; font-size: 10px; font-weight: 700; }
+.ready { color: #2e7a3c !important; }
+.wait { color: #9a6b16 !important; }
+.block { color: #a82430 !important; }
+.note { margin-top: 16px !important; padding: 11px 12px; border-radius: 10px; background: #fff6df; color: #76591f !important; }
+
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 1fr; }
+  .hero { grid-template-columns: 1fr; align-items: start; }
+  .role { min-width: 0; }
+}
+
+@media (max-width: 640px) {
+  .topbar { padding: 12px 15px; }
+  .brand span { display: none; }
+  .content { padding: 16px 14px 88px; }
+  .hero { padding: 19px; }
+  .quickGrid { grid-template-columns: 1fr; }
+  .lookup { grid-template-columns: 1fr; }
+  .lookup button { min-height: 44px; }
+}
