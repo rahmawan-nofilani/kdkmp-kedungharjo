@@ -3,8 +3,6 @@ import { getD1 } from "./context";
 const SCHEMA_VERSION = "transaction_core_v1";
 
 const TRANSACTION_CORE_SQL = `
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS products (
   id TEXT PRIMARY KEY,
   organization_id TEXT NOT NULL,
@@ -183,7 +181,22 @@ CREATE TABLE IF NOT EXISTS transaction_audit_events (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS transaction_audit_entity_idx ON transaction_audit_events (organization_id, entity_type, entity_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS app_schema_versions (
+  version TEXT PRIMARY KEY,
+  applied_at TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO app_schema_versions (version, applied_at)
+VALUES ('transaction_core_v1', datetime('now'));
 `;
+
+function toStatements(sql: string) {
+  return sql
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+}
 
 export async function initializeTransactionCore() {
   const db = getD1();
@@ -198,28 +211,30 @@ export async function initializeTransactionCore() {
       .first<{ version: string }>();
 
     if (existingVersion?.version) {
-      return { initialized: true, alreadyInitialized: true };
+      return { initialized: true, alreadyInitialized: true, statements: 0 };
     }
   }
 
-  // D1 enforces foreign keys by default. Changing PRAGMA foreign_keys inside
-  // a D1 query/migration can fail because D1 runs queries in implicit transactions.
-  const executableSql = TRANSACTION_CORE_SQL.replace("PRAGMA foreign_keys = ON;", "");
-  const result = await db.exec(executableSql);
+  const statements = toStatements(TRANSACTION_CORE_SQL);
+  let completed = 0;
 
-  await db.exec(`
-CREATE TABLE IF NOT EXISTS app_schema_versions (
-  version TEXT PRIMARY KEY,
-  applied_at TEXT NOT NULL
-);
-INSERT OR IGNORE INTO app_schema_versions (version, applied_at)
-VALUES ('${SCHEMA_VERSION}', datetime('now'));
-`);
+  for (let index = 0; index < statements.length; index += 1) {
+    const statement = statements[index];
+    try {
+      await db.exec(`${statement};`);
+      completed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const operation = statement.replace(/\s+/g, " ").slice(0, 90);
+      throw new Error(
+        `D1_BOOTSTRAP_STEP_${index + 1}: ${message} | SQL: ${operation}`,
+      );
+    }
+  }
 
   return {
     initialized: true,
     alreadyInitialized: false,
-    statements: result.count,
-    duration: result.duration,
+    statements: completed,
   };
 }
