@@ -1,5 +1,7 @@
 import { getD1 } from "./context";
 
+const SCHEMA_VERSION = "transaction_core_v1";
+
 const TRANSACTION_CORE_SQL = `
 PRAGMA foreign_keys = ON;
 
@@ -185,15 +187,35 @@ CREATE INDEX IF NOT EXISTS transaction_audit_entity_idx ON transaction_audit_eve
 
 export async function initializeTransactionCore() {
   const db = getD1();
-  const existing = await db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='products' LIMIT 1")
+
+  const versionTable = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='app_schema_versions' LIMIT 1")
     .first<{ name: string }>();
 
-  if (existing?.name) {
-    return { initialized: true, alreadyInitialized: true };
+  if (versionTable?.name) {
+    const existingVersion = await db
+      .prepare(`SELECT version FROM app_schema_versions WHERE version='${SCHEMA_VERSION}' LIMIT 1`)
+      .first<{ version: string }>();
+
+    if (existingVersion?.version) {
+      return { initialized: true, alreadyInitialized: true };
+    }
   }
 
-  const result = await db.exec(TRANSACTION_CORE_SQL);
+  // D1 enforces foreign keys by default. Changing PRAGMA foreign_keys inside
+  // a D1 query/migration can fail because D1 runs queries in implicit transactions.
+  const executableSql = TRANSACTION_CORE_SQL.replace("PRAGMA foreign_keys = ON;", "");
+  const result = await db.exec(executableSql);
+
+  await db.exec(`
+CREATE TABLE IF NOT EXISTS app_schema_versions (
+  version TEXT PRIMARY KEY,
+  applied_at TEXT NOT NULL
+);
+INSERT OR IGNORE INTO app_schema_versions (version, applied_at)
+VALUES ('${SCHEMA_VERSION}', datetime('now'));
+`);
+
   return {
     initialized: true,
     alreadyInitialized: false,
