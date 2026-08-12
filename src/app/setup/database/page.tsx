@@ -8,7 +8,12 @@ import styles from "./setup.module.css";
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  searchParams: Promise<{ status?: string; error?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    error?: string;
+    step?: string;
+    detail?: string;
+  }>;
 };
 
 export default async function DatabaseSetupPage({ searchParams }: PageProps) {
@@ -41,7 +46,13 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
 
         {params.status === "initialized" ? <div className={styles.alert}>Schema transaksi D1 berhasil dibuat.</div> : null}
         {params.status === "ready" ? <div className={styles.alert}>D1 sudah pernah diinisialisasi dan siap digunakan.</div> : null}
-        {params.error ? <div className={`${styles.alert} ${styles.error}`}>Inisialisasi belum berhasil. Pastikan deployment terbaru sudah aktif dan binding DB sudah terprovision.</div> : null}
+        {params.error ? (
+          <div className={`${styles.alert} ${styles.error}`}>
+            <strong>Inisialisasi belum berhasil.</strong>
+            {params.step ? <span> Gagal pada statement #{params.step}.</span> : null}
+            {params.detail ? <div style={{ marginTop: 8, wordBreak: "break-word" }}>{params.detail}</div> : null}
+          </div>
+        ) : null}
 
         <div className={styles.steps}>
           <div><b>01</b><span>Wrangler memprovision binding D1 `DB` melalui deployment Cloudflare.</span></div>
@@ -62,7 +73,7 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
         </div>
 
         <p className={styles.note}>
-          Halaman ini hanya dapat dibuka akun dengan permission ORG_MANAGE. Bootstrap bersifat idempotent: jika tabel inti sudah ada, aplikasi tidak membuat database kedua atau menghapus data.
+          Halaman ini hanya dapat dibuka akun dengan permission ORG_MANAGE. Bootstrap bersifat idempotent: statement yang sudah berhasil dapat dijalankan ulang dengan aman karena schema menggunakan IF NOT EXISTS dan marker versi baru ditulis setelah seluruh langkah selesai.
         </p>
       </section>
     </main>
