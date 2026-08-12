@@ -2,6 +2,11 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 type D1PreparedLike = {
   first<T = Record<string, unknown>>(): Promise<T | null>;
+  run<T = Record<string, unknown>>(): Promise<{
+    success: boolean;
+    results?: T[];
+    meta?: Record<string, unknown>;
+  }>;
 };
 
 export type D1DatabaseLike = {
