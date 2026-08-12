@@ -23,13 +23,21 @@ export function getD1(): D1DatabaseLike {
 export async function getD1SchemaStatus() {
   try {
     const db = getD1();
-    const products = await db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='products' LIMIT 1")
+    const markerTable = await db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='app_schema_versions' LIMIT 1")
       .first<{ name: string }>();
+
+    if (!markerTable?.name) {
+      return { bound: true, initialized: false };
+    }
+
+    const marker = await db
+      .prepare("SELECT version FROM app_schema_versions WHERE version='transaction_core_v1' LIMIT 1")
+      .first<{ version: string }>();
 
     return {
       bound: true,
-      initialized: Boolean(products?.name),
+      initialized: Boolean(marker?.version),
     };
   } catch {
     return {
