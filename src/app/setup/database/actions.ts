@@ -7,7 +7,7 @@ import { initializeTransactionCore } from "@/lib/d1/bootstrap";
 
 function diagnosticParams(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  const match = message.match(/^D1_BOOTSTRAP_STEP_(\d+):\s*(.*)$/s);
+  const match = message.match(/^D1_BOOTSTRAP_STEP_(\d+):\s*([\s\S]*)$/);
 
   if (!match) {
     return new URLSearchParams({ error: "database", detail: message.slice(0, 180) });
