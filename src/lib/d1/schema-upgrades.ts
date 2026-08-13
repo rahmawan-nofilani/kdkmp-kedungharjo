@@ -3,7 +3,8 @@ import { getD1 } from "./context";
 import { applyProcurementV3 } from "./procurement-schema";
 import { applyProcurementAccountingV4 } from "./procurement-accounting-schema";
 import { applyAccountingConfigV5 } from "./accounting-config-schema";
-import { applyAccountingRuntimeV6, ACCOUNTING_RUNTIME_VERSION } from "./accounting-runtime-schema";
+import { applyAccountingRuntimeV6 } from "./accounting-runtime-schema";
+import { applyTreasuryPeriodV7, TREASURY_PERIOD_VERSION } from "./treasury-period-schema";
 
 export const INVENTORY_CONTROL_VERSION = "inventory_control_v2";
 
@@ -137,6 +138,7 @@ export async function applyPendingD1Migrations() {
   const procurementAccounting = await applyProcurementAccountingV4();
   const accountingConfig = await applyAccountingConfigV5();
   const accountingRuntime = await applyAccountingRuntimeV6();
+  const treasuryPeriod = await applyTreasuryPeriodV7();
 
   return {
     initialized: true,
@@ -146,14 +148,16 @@ export async function applyPendingD1Migrations() {
       procurement.alreadyApplied &&
       procurementAccounting.alreadyApplied &&
       accountingConfig.alreadyApplied &&
-      accountingRuntime.alreadyApplied,
+      accountingRuntime.alreadyApplied &&
+      treasuryPeriod.alreadyApplied,
     statements:
       core.statements +
       inventory.statements +
       procurement.statements +
       procurementAccounting.statements +
       accountingConfig.statements +
-      accountingRuntime.statements,
-    currentVersion: ACCOUNTING_RUNTIME_VERSION,
+      accountingRuntime.statements +
+      treasuryPeriod.statements,
+    currentVersion: TREASURY_PERIOD_VERSION,
   };
 }
