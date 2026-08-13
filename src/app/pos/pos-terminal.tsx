@@ -1,8 +1,10 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { memo, useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { commitCashSaleAction } from "./actions";
+import { commitCashSaleAction, type CashSaleActionState } from "./actions";
 import styles from "./pos.module.css";
 
 type Product = {
@@ -26,6 +28,8 @@ type CartLine = {
   product: Product;
   quantity: number;
 };
+
+const initialCashSaleState: CashSaleActionState = { status: "idle" };
 
 function rupiah(value: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -108,6 +112,9 @@ export function PosTerminal({
   members: Member[];
   warehouseName: string;
 }) {
+  const router = useRouter();
+  const handledSale = useRef<string | null>(null);
+  const [actionState, formAction] = useActionState(commitCashSaleAction, initialCashSaleState);
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [memberId, setMemberId] = useState("");
@@ -116,6 +123,20 @@ export function PosTerminal({
   useEffect(() => {
     setIdempotencyKey(crypto.randomUUID());
   }, []);
+
+  useEffect(() => {
+    if (
+      actionState.status !== "success" ||
+      !actionState.saleId ||
+      handledSale.current === actionState.saleId
+    ) return;
+
+    handledSale.current = actionState.saleId;
+    setCart([]);
+    setMemberId("");
+    setIdempotencyKey(crypto.randomUUID());
+    router.refresh();
+  }, [actionState, router]);
 
   const matchingProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -182,116 +203,137 @@ export function PosTerminal({
   const changeMember = useCallback((value: string) => setMemberId(value), []);
 
   return (
-    <div className={styles.terminalGrid}>
-      <section className={styles.catalogPanel}>
-        <div className={styles.catalogHeader}>
+    <>
+      {actionState.status === "success" ? (
+        <div className={styles.successBanner}>
           <div>
-            <span className={styles.kicker}>KATALOG · {warehouseName}</span>
-            <h2>Pilih barang</h2>
+            <span>{actionState.duplicate ? "TRANSAKSI DUPLIKAT DICEGAH" : "TRANSAKSI BERHASIL"}</span>
+            {actionState.saleId ? (
+              <Link className={styles.receiptLink} href={`/sales/${actionState.saleId}`}>
+                {actionState.receiptNumber || "Buka struk transaksi"}
+              </Link>
+            ) : (
+              <strong>{actionState.receiptNumber || "Receipt tersimpan"}</strong>
+            )}
           </div>
-          <div className={styles.searchBox}>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Cari nama, SKU, atau barcode..."
-              aria-label="Cari produk"
-              autoFocus
-            />
-          </div>
+          <strong>{rupiah(actionState.totalAmount || 0)}</strong>
         </div>
+      ) : null}
+      {actionState.status === "error" ? (
+        <div className={styles.errorBanner}>{actionState.message || "Transaksi belum dapat diproses."}</div>
+      ) : null}
 
-        <div className={styles.catalogMeta}>
-          <span>{matchingProducts.length} produk cocok</span>
-          {matchingProducts.length > visibleProducts.length ? (
-            <small>60 pertama ditampilkan · gunakan pencarian untuk produk lainnya</small>
-          ) : null}
-        </div>
-
-        <div className={styles.productGrid}>
-          {visibleProducts.map((product) => (
-            <ProductButton product={product} onAdd={addProduct} key={product.id} />
-          ))}
-        </div>
-
-        {!matchingProducts.length ? (
-          <div className={styles.empty}>Produk tidak ditemukan.</div>
-        ) : null}
-      </section>
-
-      <aside className={styles.cartPanel}>
-        <div className={styles.cartHeader}>
-          <div>
-            <span className={styles.kicker}>KERANJANG</span>
-            <h2>Transaksi baru</h2>
-          </div>
-          <span className={styles.cartCount}>{totalQty} item</span>
-        </div>
-
-        <MemberSelector members={members} value={memberId} onChange={changeMember} />
-
-        <div className={styles.cartLines}>
-          {cart.length ? (
-            cart.map((line) => {
-              const atStockLimit = Boolean(
-                line.product.track_stock && line.quantity >= line.product.stock_qty,
-              );
-
-              return (
-                <div className={styles.cartLine} key={line.product.id}>
-                  <div className={styles.lineCopy}>
-                    <strong>{line.product.name}</strong>
-                    <span>{rupiah(line.product.sell_amount)} / {line.product.unit_name}</span>
-                  </div>
-                  <div className={styles.qtyControl} aria-label={`Jumlah ${line.product.name}`}>
-                    <button
-                      type="button"
-                      onClick={() => changeQuantity(line.product.id, -1)}
-                      aria-label={`Kurangi ${line.product.name}`}
-                      title="Kurangi jumlah"
-                    >−</button>
-                    <strong>{line.quantity}</strong>
-                    <button
-                      type="button"
-                      onClick={() => changeQuantity(line.product.id, 1)}
-                      disabled={atStockLimit}
-                      aria-label={`Tambah ${line.product.name}`}
-                      title={atStockLimit ? "Jumlah sudah sama dengan stok tersedia" : "Tambah jumlah"}
-                    >+</button>
-                  </div>
-                  <div className={styles.lineTotal}>
-                    <strong>{rupiah(line.product.sell_amount * line.quantity)}</strong>
-                    <button type="button" onClick={() => removeLine(line.product.id)}>Hapus</button>
-                  </div>
-                </div>
-              );
-            })
-          ) : (
-            <div className={styles.emptyCart}>Klik produk untuk menambah ke keranjang.</div>
-          )}
-        </div>
-
-        <div className={styles.checkoutDock}>
-          <div className={styles.summary}>
-            <div><span>Subtotal</span><strong>{rupiah(total)}</strong></div>
-            <div><span>Diskon</span><strong>Rp0</strong></div>
-            <div className={styles.grandTotal}><span>Total</span><strong>{rupiah(total)}</strong></div>
-          </div>
-
-          <form action={commitCashSaleAction} className={styles.checkoutForm}>
-            <input type="hidden" name="itemsJson" value={itemsJson} />
-            <input type="hidden" name="memberId" value={memberId} />
-            <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
-            <div className={styles.paymentMethod}>
-              <span>Metode pembayaran</span>
-              <strong>TUNAI / CASH</strong>
+      <div className={styles.terminalGrid}>
+        <section className={styles.catalogPanel}>
+          <div className={styles.catalogHeader}>
+            <div>
+              <span className={styles.kicker}>KATALOG · {warehouseName}</span>
+              <h2>Pilih barang</h2>
             </div>
-            <CheckoutButton disabled={!cart.length || !idempotencyKey} total={total} />
-            <p>
-              Idempotency + transaction batch aktif. Tombol otomatis terkunci selama transaksi diproses.
-            </p>
-          </form>
-        </div>
-      </aside>
-    </div>
+            <div className={styles.searchBox}>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Cari nama, SKU, atau barcode..."
+                aria-label="Cari produk"
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <div className={styles.catalogMeta}>
+            <span>{matchingProducts.length} produk cocok</span>
+            {matchingProducts.length > visibleProducts.length ? (
+              <small>60 pertama ditampilkan · gunakan pencarian untuk produk lainnya</small>
+            ) : null}
+          </div>
+
+          <div className={styles.productGrid}>
+            {visibleProducts.map((product) => (
+              <ProductButton product={product} onAdd={addProduct} key={product.id} />
+            ))}
+          </div>
+
+          {!matchingProducts.length ? (
+            <div className={styles.empty}>Produk tidak ditemukan.</div>
+          ) : null}
+        </section>
+
+        <aside className={styles.cartPanel}>
+          <div className={styles.cartHeader}>
+            <div>
+              <span className={styles.kicker}>KERANJANG</span>
+              <h2>Transaksi baru</h2>
+            </div>
+            <span className={styles.cartCount}>{totalQty} item</span>
+          </div>
+
+          <MemberSelector members={members} value={memberId} onChange={changeMember} />
+
+          <div className={styles.cartLines}>
+            {cart.length ? (
+              cart.map((line) => {
+                const atStockLimit = Boolean(
+                  line.product.track_stock && line.quantity >= line.product.stock_qty,
+                );
+
+                return (
+                  <div className={styles.cartLine} key={line.product.id}>
+                    <div className={styles.lineCopy}>
+                      <strong>{line.product.name}</strong>
+                      <span>{rupiah(line.product.sell_amount)} / {line.product.unit_name}</span>
+                    </div>
+                    <div className={styles.qtyControl} aria-label={`Jumlah ${line.product.name}`}>
+                      <button
+                        type="button"
+                        onClick={() => changeQuantity(line.product.id, -1)}
+                        aria-label={`Kurangi ${line.product.name}`}
+                        title="Kurangi jumlah"
+                      >−</button>
+                      <strong>{line.quantity}</strong>
+                      <button
+                        type="button"
+                        onClick={() => changeQuantity(line.product.id, 1)}
+                        disabled={atStockLimit}
+                        aria-label={`Tambah ${line.product.name}`}
+                        title={atStockLimit ? "Jumlah sudah sama dengan stok tersedia" : "Tambah jumlah"}
+                      >+</button>
+                    </div>
+                    <div className={styles.lineTotal}>
+                      <strong>{rupiah(line.product.sell_amount * line.quantity)}</strong>
+                      <button type="button" onClick={() => removeLine(line.product.id)}>Hapus</button>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className={styles.emptyCart}>Klik produk untuk menambah ke keranjang.</div>
+            )}
+          </div>
+
+          <div className={styles.checkoutDock}>
+            <div className={styles.summary}>
+              <div><span>Subtotal</span><strong>{rupiah(total)}</strong></div>
+              <div><span>Diskon</span><strong>Rp0</strong></div>
+              <div className={styles.grandTotal}><span>Total</span><strong>{rupiah(total)}</strong></div>
+            </div>
+
+            <form action={formAction} className={styles.checkoutForm}>
+              <input type="hidden" name="itemsJson" value={itemsJson} />
+              <input type="hidden" name="memberId" value={memberId} />
+              <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
+              <div className={styles.paymentMethod}>
+                <span>Metode pembayaran</span>
+                <strong>TUNAI / CASH</strong>
+              </div>
+              <CheckoutButton disabled={!cart.length || !idempotencyKey} total={total} />
+              <p>
+                Hasil transaksi tampil tanpa redirect penuh. Stok dan laporan direfresh setelah commit berhasil.
+              </p>
+            </form>
+          </div>
+        </aside>
+      </div>
+    </>
   );
 }

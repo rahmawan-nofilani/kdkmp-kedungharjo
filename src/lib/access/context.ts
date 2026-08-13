@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
 export type AccessContext = {
@@ -29,68 +30,76 @@ export type AccessContext = {
   }>;
 };
 
-export async function getAccessContext(): Promise<AccessContext | null> {
+type RpcAccessContext = {
+  profile?: {
+    fullName?: string | null;
+    status?: string | null;
+  } | null;
+  organization?: {
+    id?: string;
+    code?: string;
+    name?: string;
+    legalName?: string | null;
+  } | null;
+  role?: {
+    id?: string;
+    code?: string;
+    name?: string;
+  } | null;
+  permissions?: unknown;
+  units?: unknown;
+};
+
+function stringArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.filter((item): item is string => typeof item === "string"))).sort();
+}
+
+function unitArray(value: unknown): AccessContext["units"] {
+  if (!Array.isArray(value)) return [];
+  const units: AccessContext["units"] = [];
+
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.id !== "string" ||
+      typeof row.code !== "string" ||
+      typeof row.name !== "string" ||
+      typeof row.unitType !== "string"
+    ) continue;
+
+    units.push({ id: row.id, code: row.code, name: row.name, unitType: row.unitType });
+  }
+
+  return units;
+}
+
+async function loadAccessContext(): Promise<AccessContext | null> {
   const supabase = await createClient();
-  const { data: authData } = await supabase.auth.getUser();
-  const user = authData.user;
 
-  if (!user) return null;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name,status")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const { data: membership } = await supabase
-    .from("organization_memberships")
-    .select("id,organization_id,role_id,status")
-    .eq("user_id", user.id)
-    .eq("status", "ACTIVE")
-    .maybeSingle();
-
-  if (!membership) return null;
-
-  const [{ data: organization }, { data: role }, { data: rolePermissionRows }, { data: unitScopeRows }] =
-    await Promise.all([
-      supabase
-        .from("organizations")
-        .select("id,code,name,legal_name")
-        .eq("id", membership.organization_id)
-        .maybeSingle(),
-      supabase
-        .from("roles")
-        .select("id,code,name")
-        .eq("id", membership.role_id)
-        .maybeSingle(),
-      supabase
-        .from("role_permissions")
-        .select("permission_id")
-        .eq("role_id", membership.role_id),
-      supabase
-        .from("user_unit_scopes")
-        .select("unit_id")
-        .eq("membership_id", membership.id),
-    ]);
-
-  if (!organization || !role) return null;
-
-  const permissionIds = (rolePermissionRows ?? []).map((row) => row.permission_id);
-  const unitIds = (unitScopeRows ?? []).map((row) => row.unit_id);
-
-  const [{ data: permissionRows }, { data: unitRows }] = await Promise.all([
-    permissionIds.length
-      ? supabase.from("permissions").select("code").in("id", permissionIds)
-      : Promise.resolve({ data: [] as Array<{ code: string }> }),
-    unitIds.length
-      ? supabase
-          .from("organization_units")
-          .select("id,code,name,unit_type")
-          .in("id", unitIds)
-      : Promise.resolve({
-          data: [] as Array<{ id: string; code: string; name: string; unit_type: string }>,
-        }),
+  const [{ data: authData }, { data: rpcData, error: rpcError }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.rpc("get_my_access_context"),
   ]);
+
+  const user = authData.user;
+  if (!user || rpcError || !rpcData || typeof rpcData !== "object") return null;
+
+  const rpc = rpcData as RpcAccessContext;
+  const organization = rpc.organization;
+  const role = rpc.role;
+
+  if (
+    !organization ||
+    typeof organization.id !== "string" ||
+    typeof organization.code !== "string" ||
+    typeof organization.name !== "string" ||
+    !role ||
+    typeof role.id !== "string" ||
+    typeof role.code !== "string" ||
+    typeof role.name !== "string"
+  ) return null;
 
   return {
     user: {
@@ -98,26 +107,23 @@ export async function getAccessContext(): Promise<AccessContext | null> {
       email: user.email ?? null,
     },
     profile: {
-      fullName: profile?.full_name || user.email?.split("@")[0] || "Pengguna KDKMP",
-      status: profile?.status || "ACTIVE",
+      fullName: rpc.profile?.fullName || user.email?.split("@")[0] || "Pengguna KDKMP",
+      status: rpc.profile?.status || "ACTIVE",
     },
     organization: {
       id: organization.id,
       code: organization.code,
       name: organization.name,
-      legalName: organization.legal_name,
+      legalName: typeof organization.legalName === "string" ? organization.legalName : null,
     },
     role: {
       id: role.id,
       code: role.code,
       name: role.name,
     },
-    permissions: (permissionRows ?? []).map((row) => row.code).sort(),
-    units: (unitRows ?? []).map((row) => ({
-      id: row.id,
-      code: row.code,
-      name: row.name,
-      unitType: row.unit_type,
-    })),
+    permissions: stringArray(rpc.permissions),
+    units: unitArray(rpc.units),
   };
 }
+
+export const getAccessContext = cache(loadAccessContext);

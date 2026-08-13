@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getAccessContext } from "@/lib/access/context";
-import { getD1SchemaStatus } from "@/lib/d1/context";
 import { getOpenShift } from "@/lib/d1/teller";
 import { commitCashSale, getPrimaryWarehouse } from "@/lib/d1/pos";
 import { createClient } from "@/lib/supabase/server";
@@ -11,6 +10,15 @@ import { createClient } from "@/lib/supabase/server";
 type SubmittedItem = {
   productId?: unknown;
   quantity?: unknown;
+};
+
+export type CashSaleActionState = {
+  status: "idle" | "success" | "error";
+  message?: string;
+  saleId?: string;
+  receiptNumber?: string;
+  totalAmount?: number;
+  duplicate?: boolean;
 };
 
 function safeMessage(error: unknown) {
@@ -35,21 +43,21 @@ function parseItems(raw: string) {
   });
 }
 
-export async function commitCashSaleAction(formData: FormData) {
+export async function commitCashSaleAction(
+  _previousState: CashSaleActionState,
+  formData: FormData,
+): Promise<CashSaleActionState> {
   const access = await getAccessContext();
   if (!access) redirect("/login");
   if (!access.permissions.includes("POS_ACCESS")) redirect("/dashboard");
 
-  const d1 = await getD1SchemaStatus();
-  if (!d1.initialized) redirect("/setup/database");
-
-  let destination = "/pos";
-
   try {
-    const shift = await getOpenShift(access.organization.id, access.user.id);
-    if (!shift) throw new Error("Tidak ada shift OPEN. Buka shift teller terlebih dahulu.");
+    const [shift, warehouse] = await Promise.all([
+      getOpenShift(access.organization.id, access.user.id),
+      getPrimaryWarehouse(access.organization.id),
+    ]);
 
-    const warehouse = await getPrimaryWarehouse(access.organization.id);
+    if (!shift) throw new Error("Tidak ada shift OPEN. Buka shift teller terlebih dahulu.");
     if (!warehouse) throw new Error("Gudang aktif belum tersedia.");
 
     const memberId = String(formData.get("memberId") ?? "").trim() || null;
@@ -79,14 +87,22 @@ export async function commitCashSaleAction(formData: FormData) {
       items,
     });
 
-    revalidatePath("/pos");
     revalidatePath("/inventory");
     revalidatePath("/teller");
     revalidatePath("/reports/daily-sales");
-    destination = `/pos?status=success&sale=${encodeURIComponent(result.saleId)}&receipt=${encodeURIComponent(result.receiptNumber)}&total=${result.totalAmount}${result.duplicate ? "&duplicate=1" : ""}`;
-  } catch (error) {
-    destination = `/pos?error=${encodeURIComponent(safeMessage(error))}`;
-  }
 
-  redirect(destination);
+    return {
+      status: "success",
+      saleId: result.saleId,
+      receiptNumber: result.receiptNumber,
+      totalAmount: result.totalAmount,
+      duplicate: result.duplicate,
+      message: result.duplicate ? "Transaksi duplikat dicegah." : "Transaksi berhasil diposting.",
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: safeMessage(error),
+    };
+  }
 }
