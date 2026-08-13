@@ -40,12 +40,13 @@ export async function openShiftAction(formData: FormData) {
   }
 
   revalidatePath("/teller");
+  revalidatePath("/closing");
   redirect(destination);
 }
 
 export async function closeShiftAction(formData: FormData) {
   const access = await requireTellerAccess();
-  let destination = "/teller?status=shift-closed";
+  let destination = "/closing?status=shift-closed";
 
   try {
     const countedCashAmount = money(formData, "countedCashAmount");
@@ -54,12 +55,14 @@ export async function closeShiftAction(formData: FormData) {
       tellerUserId: access.user.id,
       countedCashAmount,
     });
-    destination = `/teller?status=shift-closed&variance=${result.varianceAmount}`;
+    destination = `/closing?status=shift-closed&variance=${result.varianceAmount}`;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal menutup shift.";
-    destination = `/teller?error=${encodeURIComponent(message.slice(0, 160))}`;
+    destination = `/closing?error=${encodeURIComponent(message.slice(0, 180))}`;
   }
 
   revalidatePath("/teller");
+  revalidatePath("/closing");
+  revalidatePath("/reports/daily-sales");
   redirect(destination);
 }

@@ -1,3 +1,4 @@
+import { getShiftReconciliation } from "./closing";
 import { getD1 } from "./context";
 
 export type TellerShiftRow = {
@@ -124,15 +125,16 @@ export async function closeTellerShift(input: {
   const shift = await getOpenShift(input.organizationId, input.tellerUserId);
   if (!shift) throw new Error("Tidak ada shift OPEN untuk ditutup.");
 
-  const cashRow = await db
-    .prepare(
-      "SELECT COALESCE(SUM(amount), 0) AS cash_sales FROM payments WHERE organization_id = ? AND shift_id = ? AND method = 'CASH' AND status = 'CONFIRMED'",
-    )
-    .bind(input.organizationId, shift.id)
-    .first<{ cash_sales: number }>();
+  const reconciliation = await getShiftReconciliation(input.organizationId, shift.id);
+  if (!reconciliation) throw new Error("Data rekonsiliasi shift tidak ditemukan.");
+  if (!reconciliation.passed) {
+    throw new Error(
+      `Shift belum dapat ditutup. Ada ${reconciliation.metrics.issueCount} exception transaksi yang harus diperiksa.`,
+    );
+  }
 
-  const cashSales = Number(cashRow?.cash_sales ?? 0);
-  const expected = Number(shift.opening_cash_amount) + cashSales;
+  const cashSales = reconciliation.metrics.cashConfirmedAmount;
+  const expected = reconciliation.metrics.expectedCashAmount;
   const variance = input.countedCashAmount - expected;
   const now = nowIso();
   const auditId = crypto.randomUUID();
@@ -167,6 +169,9 @@ export async function closeTellerShift(input: {
         expectedCashAmount: expected,
         countedCashAmount: input.countedCashAmount,
         varianceAmount: variance,
+        committedTransactions: reconciliation.metrics.committedTransactions,
+        voidedTransactions: reconciliation.metrics.voidedTransactions,
+        reconciliationPassed: true,
       }),
       now,
     );

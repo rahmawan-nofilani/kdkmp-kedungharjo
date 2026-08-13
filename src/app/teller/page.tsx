@@ -63,6 +63,7 @@ export default async function TellerPage({ searchParams }: PageProps) {
         </div>
         <div className={styles.topActions}>
           {posFoundationReady ? <Link href="/pos">Buka POS</Link> : null}
+          <Link href="/closing">Closing</Link>
           {access.permissions.includes("INVENTORY_VIEW") ? <Link href="/inventory">Inventory</Link> : null}
           {access.permissions.includes("ORG_MANAGE") ? <Link href="/setup/database">D1 Setup</Link> : null}
           <Link href="/members">Anggota</Link>
@@ -73,10 +74,10 @@ export default async function TellerPage({ searchParams }: PageProps) {
       <div className={styles.content}>
         <section className={styles.hero}>
           <div>
-            <p className={styles.kicker}>PHASE 1.2 · TELLER & ATOMIC POS</p>
+            <p className={styles.kicker}>PHASE 1.3 · TELLER, POS & RECONCILIATION</p>
             <h1>Workspace Teller PC</h1>
             <p>
-              D1 Transaction Core, inventory ledger, dan cash shift sudah terhubung. Setelah shift OPEN, POS development dapat memproses penjualan tunai secara atomik bersama stok, pembayaran, jurnal, audit, dan idempotency.
+              D1 Transaction Core, inventory ledger, cash shift, dan POS atomik sudah terhubung. Penutupan shift sekarang melewati reconciliation gate agar sale, payment, stok, dan jurnal harus konsisten sebelum status CLOSED.
             </p>
           </div>
           <div className={styles.role}>
@@ -130,7 +131,7 @@ export default async function TellerPage({ searchParams }: PageProps) {
                 <p className={styles.kicker}>CASH CONTROL</p>
                 <h2>{openShift ? "Shift sedang OPEN" : "Buka Shift Teller"}</h2>
                 {openShift ? (
-                  <p>Shift dibuka {new Date(openShift.opened_at).toLocaleString("id-ID")} dengan kas awal {rupiah(openShift.opening_cash_amount)}.</p>
+                  <p>Shift dibuka {new Date(openShift.opened_at).toLocaleString("id-ID")} dengan kas awal {rupiah(openShift.opening_cash_amount)}. Closing akan memeriksa integritas transaksi sebelum kas dapat ditutup.</p>
                 ) : (
                   <p>Kas awal wajib dicatat sebelum POS dapat menerima transaksi tunai.</p>
                 )}
@@ -142,7 +143,7 @@ export default async function TellerPage({ searchParams }: PageProps) {
                     Kas fisik saat tutup
                     <input name="countedCashAmount" inputMode="numeric" defaultValue="0" required />
                   </label>
-                  <button type="submit" className={styles.closeButton}>Tutup Shift</button>
+                  <button type="submit" className={styles.closeButton}>Rekonsiliasi & Tutup Shift</button>
                 </form>
               ) : (
                 <form action={openShiftAction} className={styles.shiftForm}>
@@ -158,7 +159,7 @@ export default async function TellerPage({ searchParams }: PageProps) {
 
           <aside className={styles.card}>
             <h2>Readiness transaksi</h2>
-            <p>Gate ini mencegah uang diposting sebelum seluruh ledger pendukung siap.</p>
+            <p>Gate ini mencegah uang diposting atau shift ditutup sebelum seluruh ledger pendukung siap.</p>
             <div className={styles.readiness}>
               <div><span>Authentication & RBAC</span><strong className={styles.ready}>READY</strong></div>
               <div><span>Member master</span><strong className={styles.ready}>READY</strong></div>
@@ -192,7 +193,7 @@ export default async function TellerPage({ searchParams }: PageProps) {
             ) : !openShift ? (
               <p className={styles.note}>Inventory sudah siap. Buka shift teller untuk mengaktifkan POS development.</p>
             ) : (
-              <p className={styles.note}>POS development siap. Gunakan transaksi DEMO tunai terlebih dahulu sebelum data produksi dibuka.</p>
+              <p className={styles.note}>POS siap. Gunakan menu Closing untuk melihat reconciliation PASS/CHECK dan exception per struk.</p>
             )}
           </aside>
         </section>
