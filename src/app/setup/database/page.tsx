@@ -11,6 +11,7 @@ type PageProps = {
   searchParams: Promise<{
     status?: string;
     error?: string;
+    stage?: string;
     step?: string;
     detail?: string;
   }>;
@@ -30,7 +31,7 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
         <p className={styles.kicker}>DEVELOPMENT SETUP · D1</p>
         <h1>Transaction Database</h1>
         <p className={styles.lead}>
-          Database transaksi dipisahkan dari Supabase. Supabase tetap menangani identity, role, permission, dan member registry; D1 menangani produk, inventory movement, teller shift, penjualan, pembayaran, jurnal, audit transaksi, dan idempotency.
+          D1 memakai migration marker bertahap. Data transaksi tidak di-reset ketika modul baru ditambahkan; Manager cukup menjalankan pending migration dari halaman ini setelah deployment baru aktif.
         </p>
 
         <div className={styles.statusGrid}>
@@ -39,41 +40,47 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
             <strong className={status.bound ? styles.ready : styles.wait}>{status.bound ? "CONNECTED" : "WAITING DEPLOY"}</strong>
           </article>
           <article className={styles.status}>
-            <span>Transaction schema</span>
-            <strong className={status.initialized ? styles.ready : styles.wait}>{status.initialized ? "INITIALIZED" : "NOT INITIALIZED"}</strong>
+            <span>Schema readiness</span>
+            <strong className={status.current ? styles.ready : styles.wait}>
+              {status.current ? "CURRENT" : status.initialized ? "UPGRADE REQUIRED" : "NOT INITIALIZED"}
+            </strong>
           </article>
         </div>
 
-        {params.status === "initialized" ? <div className={styles.alert}>Schema transaksi D1 berhasil dibuat.</div> : null}
-        {params.status === "ready" ? <div className={styles.alert}>D1 sudah pernah diinisialisasi dan siap digunakan.</div> : null}
+        <div className={styles.steps}>
+          <div><b>VERSION</b><span>{status.currentVersion || "Belum ada schema marker"}</span></div>
+          <div><b>CORE</b><span>{status.initialized ? "Transaction Core v1 tersedia" : "Transaction Core belum tersedia"}</span></div>
+          <div><b>V2</b><span>{status.current ? "Inventory Control v2 tersedia" : "Inventory Control v2 menunggu migration"}</span></div>
+          <div><b>DATA</b><span>Migration bersifat additive dan tidak menghapus transaksi yang sudah ada.</span></div>
+        </div>
+
+        {params.status === "updated" ? <div className={styles.alert}>Migration D1 berhasil diterapkan. Schema sekarang sudah pada versi terbaru.</div> : null}
+        {params.status === "ready" ? <div className={styles.alert}>D1 sudah berada pada schema terbaru dan siap digunakan.</div> : null}
         {params.error ? (
           <div className={`${styles.alert} ${styles.error}`}>
-            <strong>Inisialisasi belum berhasil.</strong>
+            <strong>Migration belum berhasil.</strong>
+            {params.stage ? <span> Stage {params.stage}.</span> : null}
             {params.step ? <span> Gagal pada statement #{params.step}.</span> : null}
             {params.detail ? <div style={{ marginTop: 8, wordBreak: "break-word" }}>{params.detail}</div> : null}
           </div>
         ) : null}
 
-        <div className={styles.steps}>
-          <div><b>01</b><span>Wrangler memprovision binding D1 `DB` melalui deployment Cloudflare.</span></div>
-          <div><b>02</b><span>Manager menjalankan bootstrap schema satu kali dari halaman ini.</span></div>
-          <div><b>03</b><span>Teller baru boleh membuka cash drawer setelah product & inventory setup selesai.</span></div>
-          <div><b>04</b><span>Transaksi uang tetap diblokir sampai posting inventory dan jurnal bersifat atomik.</span></div>
-        </div>
-
         <div className={styles.actions}>
-          {!status.initialized ? (
+          {!status.current ? (
             <form action={initializeD1}>
-              <button type="submit" disabled={!status.bound}>Initialize D1 Transaction Core</button>
+              <button type="submit" disabled={!status.bound}>
+                {status.initialized ? "Apply Inventory Control v2 Upgrade" : "Initialize & Upgrade D1"}
+              </button>
             </form>
           ) : (
-            <Link href="/teller">Lanjut ke Teller</Link>
+            <Link href="/inventory/opname">Lanjut ke Stock Opname</Link>
           )}
-          <Link href="/dashboard">Kembali ke Dashboard</Link>
+          <Link href="/inventory">Inventory</Link>
+          <Link href="/dashboard">Dashboard</Link>
         </div>
 
         <p className={styles.note}>
-          Halaman ini hanya dapat dibuka akun dengan permission ORG_MANAGE. Bootstrap bersifat idempotent: statement yang sudah berhasil dapat dijalankan ulang dengan aman karena schema menggunakan IF NOT EXISTS dan marker versi baru ditulis setelah seluruh langkah selesai.
+          Hanya akun dengan ORG_MANAGE yang dapat menjalankan migration. Marker versi baru baru ditulis setelah statement migration selesai, sehingga kegagalan dapat dilacak dan migration aman dijalankan ulang.
         </p>
       </section>
     </main>
