@@ -2,7 +2,8 @@ import { initializeTransactionCore } from "./bootstrap";
 import { getD1 } from "./context";
 import { applyProcurementV3 } from "./procurement-schema";
 import { applyProcurementAccountingV4 } from "./procurement-accounting-schema";
-import { applyAccountingConfigV5, ACCOUNTING_CONFIG_VERSION } from "./accounting-config-schema";
+import { applyAccountingConfigV5 } from "./accounting-config-schema";
+import { applyAccountingRuntimeV6, ACCOUNTING_RUNTIME_VERSION } from "./accounting-runtime-schema";
 
 export const INVENTORY_CONTROL_VERSION = "inventory_control_v2";
 
@@ -135,6 +136,7 @@ export async function applyPendingD1Migrations() {
   const procurement = await applyProcurementV3();
   const procurementAccounting = await applyProcurementAccountingV4();
   const accountingConfig = await applyAccountingConfigV5();
+  const accountingRuntime = await applyAccountingRuntimeV6();
 
   return {
     initialized: true,
@@ -143,13 +145,15 @@ export async function applyPendingD1Migrations() {
       inventory.alreadyApplied &&
       procurement.alreadyApplied &&
       procurementAccounting.alreadyApplied &&
-      accountingConfig.alreadyApplied,
+      accountingConfig.alreadyApplied &&
+      accountingRuntime.alreadyApplied,
     statements:
       core.statements +
       inventory.statements +
       procurement.statements +
       procurementAccounting.statements +
-      accountingConfig.statements,
-    currentVersion: ACCOUNTING_CONFIG_VERSION,
+      accountingConfig.statements +
+      accountingRuntime.statements,
+    currentVersion: ACCOUNTING_RUNTIME_VERSION,
   };
 }
