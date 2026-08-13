@@ -62,6 +62,7 @@ export default async function TellerPage({ searchParams }: PageProps) {
           </div>
         </div>
         <div className={styles.topActions}>
+          {posFoundationReady ? <Link href="/pos">Buka POS</Link> : null}
           {access.permissions.includes("INVENTORY_VIEW") ? <Link href="/inventory">Inventory</Link> : null}
           {access.permissions.includes("ORG_MANAGE") ? <Link href="/setup/database">D1 Setup</Link> : null}
           <Link href="/members">Anggota</Link>
@@ -72,10 +73,10 @@ export default async function TellerPage({ searchParams }: PageProps) {
       <div className={styles.content}>
         <section className={styles.hero}>
           <div>
-            <p className={styles.kicker}>PHASE 1.1 · TELLER & CASH DRAWER</p>
+            <p className={styles.kicker}>PHASE 1.2 · TELLER & ATOMIC POS</p>
             <h1>Workspace Teller PC</h1>
             <p>
-              D1 Transaction Core sudah terhubung. Teller sekarang memakai inventory readiness dan cash shift nyata; POS penjualan tetap dikunci sampai pipeline inventory + payment + jurnal atomik selesai.
+              D1 Transaction Core, inventory ledger, dan cash shift sudah terhubung. Setelah shift OPEN, POS development dapat memproses penjualan tunai secara atomik bersama stok, pembayaran, jurnal, audit, dan idempotency.
             </p>
           </div>
           <div className={styles.role}>
@@ -85,7 +86,7 @@ export default async function TellerPage({ searchParams }: PageProps) {
           </div>
         </section>
 
-        {params.status === "shift-opened" ? <div className={styles.success}>Shift teller berhasil dibuka.</div> : null}
+        {params.status === "shift-opened" ? <div className={styles.success}>Shift teller berhasil dibuka. POS development sekarang dapat digunakan.</div> : null}
         {params.status === "shift-closed" ? (
           <div className={variance === 0 ? styles.success : styles.warning}>
             Shift ditutup. Selisih kas: {rupiah(variance)}.
@@ -96,7 +97,7 @@ export default async function TellerPage({ searchParams }: PageProps) {
         <section className={styles.grid}>
           <article className={styles.card}>
             <h2>Pencarian anggota</h2>
-            <p>Cari anggota sebelum transaksi atau pelayanan. Member registry tetap berada di Supabase, sedangkan transaksi akan dicatat di D1.</p>
+            <p>Cari anggota sebelum transaksi atau pelayanan. Member registry tetap berada di Supabase, sedangkan transaksi dicatat di D1.</p>
             <form className={styles.lookup} action="/members" method="get">
               <input name="q" placeholder="Nomor anggota, nama, telepon, atau kode KK..." aria-label="Cari anggota" />
               <button type="submit">Cari Anggota</button>
@@ -111,10 +112,17 @@ export default async function TellerPage({ searchParams }: PageProps) {
                 <span>Product & Inventory</span>
                 <strong>{readiness.products} produk · {readiness.warehouses} gudang</strong>
               </Link>
-              <div className={styles.quick}>
-                <span>Cash Drawer</span>
-                <strong>{openShift ? `OPEN · ${rupiah(openShift.opening_cash_amount)}` : "CLOSED"}</strong>
-              </div>
+              {posFoundationReady ? (
+                <Link className={styles.quick} href="/pos">
+                  <span>Cash Drawer</span>
+                  <strong>OPEN · Buka POS</strong>
+                </Link>
+              ) : (
+                <div className={styles.quick}>
+                  <span>Cash Drawer</span>
+                  <strong>{openShift ? `OPEN · ${rupiah(openShift.opening_cash_amount)}` : "CLOSED"}</strong>
+                </div>
+              )}
             </div>
 
             <section className={styles.shiftPanel}>
@@ -174,17 +182,17 @@ export default async function TellerPage({ searchParams }: PageProps) {
               </div>
               <div>
                 <span>POS commit + journal</span>
-                <strong className={posFoundationReady ? styles.wait : styles.block}>
-                  {posFoundationReady ? "NEXT" : "BLOCKED"}
+                <strong className={posFoundationReady ? styles.ready : styles.block}>
+                  {posFoundationReady ? "READY" : "BLOCKED"}
                 </strong>
               </div>
             </div>
             {!readiness.inventoryReady ? (
               <p className={styles.note}>Buka menu Inventory, buat Gudang Utama, produk development, lalu posting opening stock minimal satu produk.</p>
             ) : !openShift ? (
-              <p className={styles.note}>Inventory sudah siap. Buka shift teller untuk mengaktifkan gate POS berikutnya.</p>
+              <p className={styles.note}>Inventory sudah siap. Buka shift teller untuk mengaktifkan POS development.</p>
             ) : (
-              <p className={styles.note}>Fondasi teller siap. Tahap berikutnya adalah atomic sale commit: sale + inventory movement + payment + jurnal + audit dalam satu transaction batch.</p>
+              <p className={styles.note}>POS development siap. Gunakan transaksi DEMO tunai terlebih dahulu sebelum data produksi dibuka.</p>
             )}
           </aside>
         </section>
