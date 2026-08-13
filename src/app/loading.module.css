@@ -1,0 +1,75 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(15,31,48,.08);
+}
+
+.progress span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  background: linear-gradient(90deg, #c21e2a, #c2994b);
+  animation: routeProgress 900ms ease-in-out infinite;
+}
+
+.pill {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid rgba(15,31,48,.12);
+  border-radius: 999px;
+  background: rgba(255,255,255,.94);
+  color: #172033;
+  box-shadow: 0 10px 30px rgba(15,31,48,.14);
+  backdrop-filter: blur(10px);
+  font-size: 12px;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #d9dee5;
+  border-top-color: #c21e2a;
+  border-radius: 50%;
+  animation: routeSpin 650ms linear infinite;
+}
+
+@keyframes routeProgress {
+  0% { transform: translateX(-115%); }
+  55% { transform: translateX(105%); }
+  100% { transform: translateX(265%); }
+}
+
+@keyframes routeSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 760px) {
+  .pill {
+    top: 12px;
+    right: 12px;
+    min-height: 34px;
+    padding: 0 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress span,
+  .spinner { animation: none; }
+}
