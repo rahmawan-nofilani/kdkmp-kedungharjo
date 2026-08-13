@@ -30,93 +30,76 @@ export type AccessContext = {
   }>;
 };
 
-type MembershipGraph = {
-  id: string;
-  status: string;
-  organization: {
-    id: string;
-    code: string;
-    name: string;
-    legal_name: string | null;
+type RpcAccessContext = {
+  profile?: {
+    fullName?: string | null;
+    status?: string | null;
   } | null;
-  role: {
-    id: string;
-    code: string;
-    name: string;
-    role_permissions: Array<{
-      permission: { code: string } | null;
-    }> | null;
+  organization?: {
+    id?: string;
+    code?: string;
+    name?: string;
+    legalName?: string | null;
   } | null;
-  user_unit_scopes: Array<{
-    unit: {
-      id: string;
-      code: string;
-      name: string;
-      unit_type: string;
-    } | null;
-  }> | null;
+  role?: {
+    id?: string;
+    code?: string;
+    name?: string;
+  } | null;
+  permissions?: unknown;
+  units?: unknown;
 };
+
+function stringArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.filter((item): item is string => typeof item === "string"))).sort();
+}
+
+function unitArray(value: unknown): AccessContext["units"] {
+  if (!Array.isArray(value)) return [];
+  const units: AccessContext["units"] = [];
+
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.id !== "string" ||
+      typeof row.code !== "string" ||
+      typeof row.name !== "string" ||
+      typeof row.unitType !== "string"
+    ) continue;
+
+    units.push({ id: row.id, code: row.code, name: row.name, unitType: row.unitType });
+  }
+
+  return units;
+}
 
 async function loadAccessContext(): Promise<AccessContext | null> {
   const supabase = await createClient();
-  const { data: authData } = await supabase.auth.getUser();
-  const user = authData.user;
 
-  if (!user) return null;
-
-  const [{ data: profile }, { data: membership, error: membershipError }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("full_name,status")
-      .eq("user_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("organization_memberships")
-      .select(`
-        id,
-        status,
-        organization:organizations!organization_memberships_organization_id_fkey(
-          id,code,name,legal_name
-        ),
-        role:roles!organization_memberships_role_id_fkey(
-          id,code,name,
-          role_permissions(
-            permission:permissions!role_permissions_permission_id_fkey(code)
-          )
-        ),
-        user_unit_scopes(
-          unit:organization_units!user_unit_scopes_unit_id_fkey(
-            id,code,name,unit_type
-          )
-        )
-      `)
-      .eq("user_id", user.id)
-      .eq("status", "ACTIVE")
-      .maybeSingle(),
+  const [{ data: authData }, { data: rpcData, error: rpcError }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.rpc("get_my_access_context"),
   ]);
 
-  if (membershipError || !membership) return null;
+  const user = authData.user;
+  if (!user || rpcError || !rpcData || typeof rpcData !== "object") return null;
 
-  const graph = membership as unknown as MembershipGraph;
-  if (!graph.organization || !graph.role) return null;
+  const rpc = rpcData as RpcAccessContext;
+  const organization = rpc.organization;
+  const role = rpc.role;
 
-  const permissions = Array.from(
-    new Set(
-      (graph.role.role_permissions ?? [])
-        .map((row) => row.permission?.code)
-        .filter((code): code is string => Boolean(code)),
-    ),
-  ).sort();
-
-  const units = (graph.user_unit_scopes ?? [])
-    .map((row) => row.unit)
-    .filter((unit): unit is NonNullable<typeof unit> => Boolean(unit))
-    .map((unit) => ({
-      id: unit.id,
-      code: unit.code,
-      name: unit.name,
-      unitType: unit.unit_type,
-    }));
+  if (
+    !organization ||
+    typeof organization.id !== "string" ||
+    typeof organization.code !== "string" ||
+    typeof organization.name !== "string" ||
+    !role ||
+    typeof role.id !== "string" ||
+    typeof role.code !== "string" ||
+    typeof role.name !== "string"
+  ) return null;
 
   return {
     user: {
@@ -124,22 +107,22 @@ async function loadAccessContext(): Promise<AccessContext | null> {
       email: user.email ?? null,
     },
     profile: {
-      fullName: profile?.full_name || user.email?.split("@")[0] || "Pengguna KDKMP",
-      status: profile?.status || "ACTIVE",
+      fullName: rpc.profile?.fullName || user.email?.split("@")[0] || "Pengguna KDKMP",
+      status: rpc.profile?.status || "ACTIVE",
     },
     organization: {
-      id: graph.organization.id,
-      code: graph.organization.code,
-      name: graph.organization.name,
-      legalName: graph.organization.legal_name,
+      id: organization.id,
+      code: organization.code,
+      name: organization.name,
+      legalName: typeof organization.legalName === "string" ? organization.legalName : null,
     },
     role: {
-      id: graph.role.id,
-      code: graph.role.code,
-      name: graph.role.name,
+      id: role.id,
+      code: role.code,
+      name: role.name,
     },
-    permissions,
-    units,
+    permissions: stringArray(rpc.permissions),
+    units: unitArray(rpc.units),
   };
 }
 
