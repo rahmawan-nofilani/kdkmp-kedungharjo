@@ -3,6 +3,7 @@ import { AppNavigationShell } from "@/components/app-navigation-shell";
 import { getAccessContext } from "@/lib/access/context";
 import "./globals.css";
 import "./navigation-links.css";
+import "./workspace-header.css";
 
 export const metadata: Metadata = {
   title: "KDKMP Kedungharjo",
