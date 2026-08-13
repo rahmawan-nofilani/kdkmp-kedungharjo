@@ -119,7 +119,10 @@ function monthBounds(month: string) {
 }
 
 async function accountBalanceAsOf(organizationId: string, accountCode: string, endDate: string) {
-  const period = accountingPeriod("2000-01-01", endDate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) throw new Error("Tanggal saldo rekonsiliasi tidak valid.");
+  const endMs = Date.parse(`${endDate}T00:00:00+07:00`);
+  if (!Number.isFinite(endMs)) throw new Error("Tanggal saldo rekonsiliasi tidak valid.");
+  const toExclusiveIso = new Date(endMs + 86_400_000).toISOString();
   const db = getD1();
   const row = await db.prepare(`
     SELECT COALESCE(SUM(jl.debit_amount - jl.credit_amount),0) AS balance
@@ -128,7 +131,7 @@ async function accountBalanceAsOf(organizationId: string, accountCode: string, e
     WHERE je.organization_id=? AND je.status='POSTED'
       AND jl.account_code=?
       AND COALESCE(je.posted_at,je.created_at) < ?
-  `).bind(organizationId, accountCode, period.toExclusiveIso).first<{ balance: number }>();
+  `).bind(organizationId, accountCode, toExclusiveIso).first<{ balance: number }>();
   return Number(row?.balance ?? 0);
 }
 
@@ -212,6 +215,11 @@ export async function createTreasuryAccount(input: {
     WHERE id=? AND organization_id=? LIMIT 1
   `).bind(input.chartAccountId, input.organizationId).first<{ id: string; code: string; account_type: string; status: string }>();
   if (!chart || chart.status !== 'ACTIVE' || chart.account_type !== 'ASSET') throw new Error("Treasury account harus terhubung ke akun ASSET aktif.");
+  const mapped = await db.prepare(`
+    SELECT id, code FROM treasury_accounts
+    WHERE organization_id=? AND chart_account_id=? LIMIT 1
+  `).bind(input.organizationId, chart.id).first<{ id: string; code: string }>();
+  if (mapped) throw new Error(`Akun COA ${chart.code} sudah dipakai treasury ${mapped.code}. Gunakan akun ASSET terpisah agar saldo tidak terhitung ganda.`);
   const id = crypto.randomUUID();
   const now = nowIso();
   await db.batch([
@@ -391,7 +399,7 @@ export async function transferTreasury(input: {
       .bind(input.organizationId, key, JSON.stringify({ from: from.id, to: to.id, amount: input.amount }), transferGroupId, now),
     db.prepare(`INSERT INTO journal_entries
       (id,organization_id,entry_number,source_type,source_id,description,status,posted_by,posted_at,created_at)
-      VALUES (?,?,?,'TREASURY_TRANSFER',?,?, 'POSTED',?,?,?)`)
+      VALUES (?,?,?,'TREASURY_TRANSFER',?,?,'POSTED',?,?,?)`)
       .bind(journalId, input.organizationId, `JRN-${number}`, transferGroupId, description, input.actorUserId, now, now),
     db.prepare(`INSERT INTO journal_lines
       (id,journal_entry_id,account_code,debit_amount,credit_amount,memo,created_at)
@@ -403,11 +411,11 @@ export async function transferTreasury(input: {
       .bind(crypto.randomUUID(), journalId, from.chart_code, input.amount, `Transfer keluar · ${description}`, now),
     db.prepare(`INSERT INTO treasury_transactions
       (id,organization_id,transaction_number,treasury_account_id,direction,transaction_type,amount,counterpart_account_id,description,reference_number,transfer_group_id,journal_entry_id,status,posted_by,posted_at,created_at)
-      VALUES (?,?,?,?, 'OUT','TRANSFER_OUT',?,NULL,?,?,?,?,'POSTED',?,?,?)`)
+      VALUES (?,?,?,?,'OUT','TRANSFER_OUT',?,NULL,?,?,?,?,'POSTED',?,?,?)`)
       .bind(outId, input.organizationId, `${number}-OUT`, from.id, input.amount, description, input.referenceNumber?.trim() || null, transferGroupId, journalId, input.actorUserId, now, now),
     db.prepare(`INSERT INTO treasury_transactions
       (id,organization_id,transaction_number,treasury_account_id,direction,transaction_type,amount,counterpart_account_id,description,reference_number,transfer_group_id,journal_entry_id,status,posted_by,posted_at,created_at)
-      VALUES (?,?,?,?, 'IN','TRANSFER_IN',?,NULL,?,?,?,?,'POSTED',?,?,?)`)
+      VALUES (?,?,?,?,'IN','TRANSFER_IN',?,NULL,?,?,?,?,'POSTED',?,?,?)`)
       .bind(inId, input.organizationId, `${number}-IN`, to.id, input.amount, description, input.referenceNumber?.trim() || null, transferGroupId, journalId, input.actorUserId, now, now),
     db.prepare(`INSERT INTO transaction_audit_events
       (id,organization_id,actor_user_id,event_type,entity_type,entity_id,payload_json,created_at)
