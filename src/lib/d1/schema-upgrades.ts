@@ -5,7 +5,8 @@ import { applyProcurementAccountingV4 } from "./procurement-accounting-schema";
 import { applyAccountingConfigV5 } from "./accounting-config-schema";
 import { applyAccountingRuntimeV6 } from "./accounting-runtime-schema";
 import { applyTreasuryPeriodV7 } from "./treasury-period-schema";
-import { applyControlledJournalV8, CONTROLLED_JOURNAL_VERSION } from "./controlled-journal-schema";
+import { applyControlledJournalV8 } from "./controlled-journal-schema";
+import { applyAssetDepreciationV9, ASSET_DEPRECIATION_VERSION } from "./asset-schema";
 
 export const INVENTORY_CONTROL_VERSION = "inventory_control_v2";
 
@@ -141,6 +142,7 @@ export async function applyPendingD1Migrations() {
   const accountingRuntime = await applyAccountingRuntimeV6();
   const treasuryPeriod = await applyTreasuryPeriodV7();
   const controlledJournal = await applyControlledJournalV8();
+  const assetDepreciation = await applyAssetDepreciationV9();
 
   return {
     initialized: true,
@@ -152,7 +154,8 @@ export async function applyPendingD1Migrations() {
       accountingConfig.alreadyApplied &&
       accountingRuntime.alreadyApplied &&
       treasuryPeriod.alreadyApplied &&
-      controlledJournal.alreadyApplied,
+      controlledJournal.alreadyApplied &&
+      assetDepreciation.alreadyApplied,
     statements:
       core.statements +
       inventory.statements +
@@ -161,7 +164,8 @@ export async function applyPendingD1Migrations() {
       accountingConfig.statements +
       accountingRuntime.statements +
       treasuryPeriod.statements +
-      controlledJournal.statements,
-    currentVersion: CONTROLLED_JOURNAL_VERSION,
+      controlledJournal.statements +
+      assetDepreciation.statements,
+    currentVersion: ASSET_DEPRECIATION_VERSION,
   };
 }
