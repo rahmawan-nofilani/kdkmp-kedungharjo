@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { useFormStatus } from "react-dom";
 import { commitCashSaleAction } from "./actions";
 import styles from "./pos.module.css";
 
@@ -34,6 +35,68 @@ function rupiah(value: number) {
   }).format(value);
 }
 
+const ProductButton = memo(function ProductButton({
+  product,
+  onAdd,
+}: {
+  product: Product;
+  onAdd: (product: Product) => void;
+}) {
+  const unavailable = Boolean(product.track_stock && product.stock_qty <= 0);
+
+  return (
+    <button
+      type="button"
+      className={styles.productCard}
+      onClick={() => onAdd(product)}
+      disabled={unavailable}
+    >
+      <span className={styles.productSku}>{product.sku}</span>
+      <strong>{product.name}</strong>
+      <span className={styles.productPrice}>{rupiah(product.sell_amount)}</span>
+      <small>
+        {product.track_stock
+          ? `Stok ${product.stock_qty} ${product.unit_name}`
+          : "Non-stock item"}
+      </small>
+    </button>
+  );
+});
+
+const MemberSelector = memo(function MemberSelector({
+  members,
+  value,
+  onChange,
+}: {
+  members: Member[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className={styles.memberField}>
+      Anggota
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Umum / non-anggota</option>
+        {members.map((member) => (
+          <option value={member.id} key={member.id}>
+            {member.member_number} · {member.full_name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+});
+
+function CheckoutButton({ disabled, total }: { disabled: boolean; total: number }) {
+  const { pending } = useFormStatus();
+
+  return (
+    <button type="submit" disabled={disabled || pending} aria-busy={pending}>
+      {pending ? "Memproses transaksi…" : `Bayar ${rupiah(total)}`}
+    </button>
+  );
+}
+
 export function PosTerminal({
   products,
   members,
@@ -52,7 +115,7 @@ export function PosTerminal({
     setIdempotencyKey(crypto.randomUUID());
   }, []);
 
-  const filtered = useMemo(() => {
+  const matchingProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return products;
     return products.filter((product) =>
@@ -62,13 +125,28 @@ export function PosTerminal({
     );
   }, [products, query]);
 
-  const total = cart.reduce(
-    (sum, line) => sum + line.product.sell_amount * line.quantity,
-    0,
-  );
-  const totalQty = cart.reduce((sum, line) => sum + line.quantity, 0);
+  // Keep the DOM light on teller PCs. Search still reaches the complete catalog.
+  const visibleProducts = useMemo(() => matchingProducts.slice(0, 60), [matchingProducts]);
 
-  function addProduct(product: Product) {
+  const { total, totalQty, itemsJson } = useMemo(() => {
+    let nextTotal = 0;
+    let nextQty = 0;
+
+    for (const line of cart) {
+      nextTotal += line.product.sell_amount * line.quantity;
+      nextQty += line.quantity;
+    }
+
+    return {
+      total: nextTotal,
+      totalQty: nextQty,
+      itemsJson: JSON.stringify(
+        cart.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
+      ),
+    };
+  }, [cart]);
+
+  const addProduct = useCallback((product: Product) => {
     if (product.track_stock && product.stock_qty <= 0) return;
     setCart((current) => {
       const existing = current.find((line) => line.product.id === product.id);
@@ -81,9 +159,9 @@ export function PosTerminal({
       }
       return [...current, { product, quantity: 1 }];
     });
-  }
+  }, []);
 
-  function changeQuantity(productId: string, delta: number) {
+  const changeQuantity = useCallback((productId: string, delta: number) => {
     setCart((current) =>
       current
         .map((line) => {
@@ -94,15 +172,13 @@ export function PosTerminal({
         })
         .filter((line) => line.quantity > 0),
     );
-  }
+  }, []);
 
-  function removeLine(productId: string) {
+  const removeLine = useCallback((productId: string) => {
     setCart((current) => current.filter((line) => line.product.id !== productId));
-  }
+  }, []);
 
-  const itemsJson = JSON.stringify(
-    cart.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
-  );
+  const changeMember = useCallback((value: string) => setMemberId(value), []);
 
   return (
     <div className={styles.terminalGrid}>
@@ -122,31 +198,20 @@ export function PosTerminal({
           </div>
         </div>
 
-        <div className={styles.productGrid}>
-          {filtered.map((product) => {
-            const unavailable = Boolean(product.track_stock && product.stock_qty <= 0);
-            return (
-              <button
-                type="button"
-                className={styles.productCard}
-                onClick={() => addProduct(product)}
-                disabled={unavailable}
-                key={product.id}
-              >
-                <span className={styles.productSku}>{product.sku}</span>
-                <strong>{product.name}</strong>
-                <span className={styles.productPrice}>{rupiah(product.sell_amount)}</span>
-                <small>
-                  {product.track_stock
-                    ? `Stok ${product.stock_qty} ${product.unit_name}`
-                    : "Non-stock item"}
-                </small>
-              </button>
-            );
-          })}
+        <div className={styles.catalogMeta}>
+          <span>{matchingProducts.length} produk cocok</span>
+          {matchingProducts.length > visibleProducts.length ? (
+            <small>60 pertama ditampilkan · gunakan pencarian untuk produk lainnya</small>
+          ) : null}
         </div>
 
-        {!filtered.length ? (
+        <div className={styles.productGrid}>
+          {visibleProducts.map((product) => (
+            <ProductButton product={product} onAdd={addProduct} key={product.id} />
+          ))}
+        </div>
+
+        {!matchingProducts.length ? (
           <div className={styles.empty}>Produk tidak ditemukan.</div>
         ) : null}
       </section>
@@ -160,17 +225,7 @@ export function PosTerminal({
           <span className={styles.cartCount}>{totalQty} item</span>
         </div>
 
-        <label className={styles.memberField}>
-          Anggota
-          <select value={memberId} onChange={(event) => setMemberId(event.target.value)}>
-            <option value="">Umum / non-anggota</option>
-            {members.map((member) => (
-              <option value={member.id} key={member.id}>
-                {member.member_number} · {member.full_name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <MemberSelector members={members} value={memberId} onChange={changeMember} />
 
         <div className={styles.cartLines}>
           {cart.length ? (
@@ -196,27 +251,27 @@ export function PosTerminal({
           )}
         </div>
 
-        <div className={styles.summary}>
-          <div><span>Subtotal</span><strong>{rupiah(total)}</strong></div>
-          <div><span>Diskon</span><strong>Rp0</strong></div>
-          <div className={styles.grandTotal}><span>Total</span><strong>{rupiah(total)}</strong></div>
-        </div>
-
-        <form action={commitCashSaleAction} className={styles.checkoutForm}>
-          <input type="hidden" name="itemsJson" value={itemsJson} />
-          <input type="hidden" name="memberId" value={memberId} />
-          <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
-          <div className={styles.paymentMethod}>
-            <span>Metode pembayaran</span>
-            <strong>TUNAI / CASH</strong>
+        <div className={styles.checkoutDock}>
+          <div className={styles.summary}>
+            <div><span>Subtotal</span><strong>{rupiah(total)}</strong></div>
+            <div><span>Diskon</span><strong>Rp0</strong></div>
+            <div className={styles.grandTotal}><span>Total</span><strong>{rupiah(total)}</strong></div>
           </div>
-          <button type="submit" disabled={!cart.length || !idempotencyKey}>
-            Bayar {rupiah(total)}
-          </button>
-          <p>
-            Satu klik saja. Sistem memakai idempotency key dan transaction batch untuk mencegah transaksi ganda atau setengah tersimpan.
-          </p>
-        </form>
+
+          <form action={commitCashSaleAction} className={styles.checkoutForm}>
+            <input type="hidden" name="itemsJson" value={itemsJson} />
+            <input type="hidden" name="memberId" value={memberId} />
+            <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
+            <div className={styles.paymentMethod}>
+              <span>Metode pembayaran</span>
+              <strong>TUNAI / CASH</strong>
+            </div>
+            <CheckoutButton disabled={!cart.length || !idempotencyKey} total={total} />
+            <p>
+              Idempotency + transaction batch aktif. Tombol otomatis terkunci selama transaksi diproses.
+            </p>
+          </form>
+        </div>
       </aside>
     </div>
   );
