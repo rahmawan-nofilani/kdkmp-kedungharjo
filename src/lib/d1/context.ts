@@ -36,6 +36,7 @@ const EMPTY_FEATURES = {
   treasuryPeriod: false,
   controlledJournal: false,
   assetDepreciation: false,
+  systemCapacity: false,
 };
 
 export function getD1(): D1DatabaseLike {
@@ -70,7 +71,7 @@ export async function getD1SchemaStatus() {
     }
 
     const versions = await db
-      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3','procurement_accounting_v4','accounting_config_v5','accounting_runtime_v6','treasury_period_v7','controlled_journal_v8','asset_depreciation_v9')")
+      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3','procurement_accounting_v4','accounting_config_v5','accounting_runtime_v6','treasury_period_v7','controlled_journal_v8','asset_depreciation_v9','system_capacity_v10')")
       .all<{ version: string }>();
     const applied = new Set(versions.results.map((row) => row.version));
     const coreReady = applied.has("transaction_core_v1");
@@ -82,38 +83,42 @@ export async function getD1SchemaStatus() {
     const treasuryPeriodReady = applied.has("treasury_period_v7");
     const controlledJournalReady = applied.has("controlled_journal_v8");
     const assetDepreciationReady = applied.has("asset_depreciation_v9");
+    const systemCapacityReady = applied.has("system_capacity_v10");
 
-    const currentVersion = assetDepreciationReady
-      ? "asset_depreciation_v9"
-      : controlledJournalReady
-        ? "controlled_journal_v8"
-        : treasuryPeriodReady
-          ? "treasury_period_v7"
-          : accountingRuntimeReady
-            ? "accounting_runtime_v6"
-            : accountingConfigReady
-              ? "accounting_config_v5"
-              : procurementAccountingReady
-                ? "procurement_accounting_v4"
-                : procurementReady
-                  ? "procurement_v3"
-                  : inventoryReady
-                    ? "inventory_control_v2"
-                    : coreReady
-                      ? "transaction_core_v1"
-                      : null;
+    const currentVersion = systemCapacityReady
+      ? "system_capacity_v10"
+      : assetDepreciationReady
+        ? "asset_depreciation_v9"
+        : controlledJournalReady
+          ? "controlled_journal_v8"
+          : treasuryPeriodReady
+            ? "treasury_period_v7"
+            : accountingRuntimeReady
+              ? "accounting_runtime_v6"
+              : accountingConfigReady
+                ? "accounting_config_v5"
+                : procurementAccountingReady
+                  ? "procurement_accounting_v4"
+                  : procurementReady
+                    ? "procurement_v3"
+                    : inventoryReady
+                      ? "inventory_control_v2"
+                      : coreReady
+                        ? "transaction_core_v1"
+                        : null;
 
     return {
       bound: true,
       initialized: coreReady,
       current:
         coreReady && inventoryReady && procurementReady && procurementAccountingReady &&
-        accountingConfigReady && accountingRuntimeReady && treasuryPeriodReady && controlledJournalReady && assetDepreciationReady,
+        accountingConfigReady && accountingRuntimeReady && treasuryPeriodReady && controlledJournalReady &&
+        assetDepreciationReady && systemCapacityReady,
       currentVersion,
       pendingUpgrade:
         coreReady &&
         (!inventoryReady || !procurementReady || !procurementAccountingReady || !accountingConfigReady ||
-          !accountingRuntimeReady || !treasuryPeriodReady || !controlledJournalReady || !assetDepreciationReady),
+          !accountingRuntimeReady || !treasuryPeriodReady || !controlledJournalReady || !assetDepreciationReady || !systemCapacityReady),
       features: {
         transactionCore: coreReady,
         inventoryControl: inventoryReady,
@@ -124,6 +129,7 @@ export async function getD1SchemaStatus() {
         treasuryPeriod: treasuryPeriodReady,
         controlledJournal: controlledJournalReady,
         assetDepreciation: assetDepreciationReady,
+        systemCapacity: systemCapacityReady,
       },
     };
   } catch {
