@@ -33,7 +33,7 @@ const navigation: Array<{ section: string; items: NavItem[] }> = [
   {
     section: "Kontrol",
     items: [
-      { label: "Keuangan", href: "/dashboard", permission: "FINANCE_VIEW", badge: "Soon" },
+      { label: "Keuangan", href: "/finance", permission: "FINANCE_VIEW", badge: "Live" },
       { label: "Approval", href: "/procurement", permission: "PURCHASE_APPROVE", badge: "PR" },
       { label: "Laporan", href: "/reports/daily-sales", permission: "REPORT_VIEW", badge: "Live" },
     ],
@@ -88,9 +88,9 @@ export default async function DashboardPage() {
         <div className="workspace-content">
           <section className="welcome-panel">
             <div>
-              <p className="eyebrow dashboard-eyebrow">PHASE 2A · PROCUREMENT CORE</p>
-              <h2>Retail core sekarang diperluas ke supplier, Purchase Request, approval, Purchase Order, dan receiving berbasis inventory ledger.</h2>
-              <p>POS, closing, stock opname, dan procurement memakai jalur kontrol yang sama: role/permission di Supabase dan transaksi operasional di D1. Gunakan data DEMO sampai rangkaian procurement + invoice/AP selesai diuji.</p>
+              <p className="eyebrow dashboard-eyebrow">PHASE 3A · ACCOUNTING READ MODEL</p>
+              <h2>Retail, inventory, procurement, dan AP sekarang ditarik ke satu kontrol General Ledger dan laporan keuangan.</h2>
+              <p>POS, closing, stock opname, supplier, PR, PO, receiving, invoice, 3-Way Match, AP, dan jurnal sudah memiliki jalur data yang dapat diaudit. Gunakan data DEMO sampai configurable COA, finance controls, security hardening, dan UAT selesai.</p>
             </div>
             <div className="role-chip"><span>Role aktif</span><strong>{access.role.name}</strong></div>
           </section>
@@ -104,13 +104,13 @@ export default async function DashboardPage() {
 
           <section className="dashboard-grid">
             <article className="panel-card next-panel">
-              <div className="panel-heading"><div><span className="panel-label">PHASE 2A ACTIVE</span><h3>Procurement Transaction Chain</h3></div><span className="panel-pill">Controlled</span></div>
-              <p>Supplier → PR → approval → PO → receiving sekarang menjadi jalur berikutnya. Receiving memposting PURCHASE_RECEIPT ke inventory ledger; invoice/AP belum dibuka sampai receiving stabil.</p>
+              <div className="panel-heading"><div><span className="panel-label">PHASE 3A ACTIVE</span><h3>Accounting Read Model</h3></div><span className="panel-pill">Controlled</span></div>
+              <p>General Ledger membaca jurnal POSTED dari transaksi yang sudah dibangun. Trial Balance, Laba-Rugi, Neraca, cash/bank, AP, GRNI, dan journal integrity ditampilkan tanpa mengubah jurnal sumber.</p>
               <div className="step-list">
                 <div><b>01</b><span>Atomic POS + closing ✓</span></div>
-                <div><b>02</b><span>Inventory control + stock opname ✓</span></div>
-                <div><b>03</b><span>Supplier + PR + approval + PO ✓</span></div>
-                <div><b>04</b><span>PO receiving → inventory ledger ✓</span></div>
+                <div><b>02</b><span>Inventory + stock opname ✓</span></div>
+                <div><b>03</b><span>Procurement + Invoice/AP ✓</span></div>
+                <div><b>04</b><span>General Ledger + Trial Balance →</span></div>
               </div>
             </article>
 
