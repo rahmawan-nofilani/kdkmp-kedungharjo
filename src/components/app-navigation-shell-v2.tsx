@@ -22,17 +22,17 @@ type NavItem = {
 const groups: Array<{ section: string; items: NavItem[] }> = [
   { section: "Utama", items: [
     { label: "Dashboard", href: "/dashboard", permission: "DASHBOARD_VIEW" },
-    { label: "POS", href: "/pos", permission: "POS_ACCESS", badge: "Demo" },
-    { label: "Teller / Shift", href: "/teller", permission: "POS_ACCESS" },
+    { label: "POS / Kasir", href: "/pos", permission: "POS_ACCESS", badge: "Demo" },
+    { label: "Kasir / Shift", href: "/teller", permission: "POS_ACCESS" },
   ]},
   { section: "Operasional", items: [
     { label: "Anggota", href: "/members", permission: "MEMBER_VIEW" },
     { label: "Stok & Gudang", href: "/inventory", permission: "INVENTORY_VIEW" },
     { label: "Pembelian", href: "/procurement", permission: "PURCHASE_VIEW" },
-    { label: "Hutang Supplier", href: "/procurement/ap", permission: "AP_VIEW" },
+    { label: "Hutang Pemasok", href: "/procurement/ap", permission: "AP_VIEW" },
   ]},
   { section: "Keuangan", items: [
-    { label: "Keuangan", href: "/finance", permission: "FINANCE_VIEW" },
+    { label: "Ringkasan Keuangan", href: "/finance", permission: "FINANCE_VIEW" },
     { label: "Kas & Bank", href: "/finance/treasury", permission: "FINANCE_VIEW" },
     { label: "Jurnal", href: "/finance/journals", permission: "FINANCE_VIEW" },
     { label: "Aset Tetap", href: "/finance/assets", permission: "FINANCE_VIEW" },
@@ -40,13 +40,13 @@ const groups: Array<{ section: string; items: NavItem[] }> = [
     { label: "Pengaturan Akuntansi", href: "/finance/settings", anyPermissions: ["ACCOUNTING_MANAGE", "ACCOUNTING_APPROVE"] },
   ]},
   { section: "Kontrol", items: [
-    { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE"] },
+    { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","ORG_MANAGE"] },
     { label: "Laporan Penjualan", href: "/reports/daily-sales", permission: "REPORT_VIEW" },
-    { label: "Database Setup", href: "/setup/database", permission: "ORG_MANAGE", badge: "Dev" },
+    { label: "Pengaturan Database", href: "/setup/database", permission: "ORG_MANAGE", badge: "Dev" },
   ]},
 ];
 
-const noShell = new Set(["/", "/login", "/dashboard"]);
+const noShell = new Set(["/", "/login"]);
 
 function allowed(item: NavItem, permissions: Set<string>) {
   if (item.permission && !permissions.has(item.permission)) return false;
@@ -60,8 +60,8 @@ function BackButton({ mobile = false }: { mobile?: boolean }) {
     if (typeof window !== "undefined" && window.history.length > 1) router.back();
     else router.push("/dashboard");
   }
-  return <button type="button" className={mobile ? "mobile-back-button" : "sidebar-back-button"} onClick={back}>
-    <span aria-hidden="true">←</span><span>{mobile ? "Kembali" : "Kembali ke menu sebelumnya"}</span>
+  return <button type="button" className={mobile ? "mobile-back-button" : "sidebar-back-button"} onClick={back} title="Kembali ke halaman sebelumnya">
+    <span aria-hidden="true">←</span><span>Kembali</span>
   </button>;
 }
 
@@ -81,7 +81,7 @@ export function AppNavigationShellV2({ access, children }: { access: ShellAccess
 
   return <div className="app-shell">
     <aside className="desktop-sidebar">
-      <Link href="/dashboard" className="sidebar-brand persistent-brand">
+      <Link href="/dashboard" className="sidebar-brand persistent-brand" aria-label="Buka Dashboard">
         <div className="brand-mark compact">KD</div><div><strong>KDKMP</strong><span>Kedungharjo</span></div>
       </Link>
       <div className="persistent-back"><BackButton /></div>
@@ -104,8 +104,8 @@ export function AppNavigationShellV2({ access, children }: { access: ShellAccess
 
     <nav className="mobile-bottom-nav" aria-label="Navigasi mobile">
       <BackButton mobile />
-      <Link href="/dashboard"><span>⌂</span>Beranda</Link>
-      {permissions.has("POS_ACCESS") ? <Link className={pathname.startsWith("/pos") ? "active" : ""} href="/pos"><span>▣</span>POS</Link> : <Link href="/dashboard"><span>⌂</span>Beranda</Link>}
+      <Link className={pathname === "/dashboard" ? "active" : ""} href="/dashboard"><span>⌂</span>Beranda</Link>
+      {permissions.has("POS_ACCESS") ? <Link className={pathname.startsWith("/pos") ? "active" : ""} href="/pos"><span>▣</span>Kasir</Link> : <Link href="/dashboard"><span>⌂</span>Beranda</Link>}
       {permissions.has("INVENTORY_VIEW") ? <Link className={pathname.startsWith("/inventory") ? "active" : ""} href="/inventory"><span>▤</span>Stok</Link> : <Link href="/dashboard"><span>⌂</span>Beranda</Link>}
       {permissions.has("FINANCE_VIEW") ? <Link className={pathname.startsWith("/finance") ? "active" : ""} href="/finance"><span>Rp</span>Keuangan</Link> : <Link href="/dashboard"><span>⌂</span>Beranda</Link>}
     </nav>
