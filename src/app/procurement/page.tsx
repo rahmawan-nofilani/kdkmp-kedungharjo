@@ -76,7 +76,7 @@ export default async function ProcurementPage({ searchParams }: PageProps) {
             <h2>Permintaan, persetujuan, PO, dan penerimaan berada dalam satu jejak transaksi.</h2>
             <p>Receiving yang diposting dari PO otomatis masuk ke Inventory Ledger sebagai PURCHASE_RECEIPT. Pembuat PR tidak dapat menyetujui PR miliknya sendiri.</p>
           </div>
-          <div className={styles.orgCard}><span>Organisasi</span><strong>{access.organization.name}</strong><small>{access.roles.join(", ") || "Tanpa role"}</small></div>
+          <div className={styles.orgCard}><span>Organisasi</span><strong>{access.organization.name}</strong><small>{access.role.name}</small></div>
         </section>
 
         {params.status ? <div className={styles.success}>Proses berhasil: {params.status.replace(/-/g, " ")}.</div> : null}
