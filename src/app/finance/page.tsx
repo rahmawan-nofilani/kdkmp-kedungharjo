@@ -10,6 +10,7 @@ import {
   listJournalSummaries,
   listLedgerLines,
 } from "@/lib/d1/accounting";
+import { listAccounts } from "@/lib/d1/accounting-config";
 import { getD1SchemaStatus } from "@/lib/d1/context";
 import styles from "./finance.module.css";
 
@@ -64,17 +65,22 @@ export default async function FinancePage({ searchParams }: PageProps) {
     period = accountingPeriod(monthStart(today), today);
   }
   const account = params.account?.trim() || null;
+  const accountingConfigReady = schema.currentVersion === "accounting_config_v5";
+  const procurementAccountingReady = ["procurement_accounting_v4", "accounting_config_v5"].includes(schema.currentVersion || "");
 
-  const [trialBalance, integrity, journals, ledger] = await Promise.all([
+  const [trialBalance, integrity, journals, ledger, accounts] = await Promise.all([
     getTrialBalance(access.organization.id, period),
     getAccountingIntegrity(access.organization.id, period),
     listJournalSummaries(access.organization.id, period, 120),
     listLedgerLines(access.organization.id, period, account, 300),
+    accountingConfigReady ? listAccounts(access.organization.id) : Promise.resolve([]),
   ]);
+  const accountNames = new Map(accounts.map((item) => [item.code, item.name]));
+  const accountName = (code: string) => accountNames.get(code) || foundationAccountName(code);
   const model = buildFinancialReadModel(trialBalance);
   const totalTrialDebit = trialBalance.reduce((sum, row) => sum + row.debit_amount, 0);
   const totalTrialCredit = trialBalance.reduce((sum, row) => sum + row.credit_amount, 0);
-  const schemaCurrent = schema.currentVersion === "procurement_accounting_v4";
+  const canConfigure = access.permissions.includes("ACCOUNTING_MANAGE") || access.permissions.includes("ACCOUNTING_APPROVE");
 
   return (
     <main className={styles.page}>
@@ -84,6 +90,7 @@ export default async function FinancePage({ searchParams }: PageProps) {
           <h1>General Ledger & Financial Read Model</h1>
         </div>
         <nav>
+          {accountingConfigReady && canConfigure ? <Link href="/finance/settings">Accounting Settings</Link> : null}
           <Link href="/procurement/ap">AP</Link>
           <Link href="/reports/daily-sales">Sales Report</Link>
           <Link href="/dashboard">Dashboard</Link>
@@ -93,22 +100,27 @@ export default async function FinancePage({ searchParams }: PageProps) {
       <div className={styles.content}>
         <section className={styles.hero}>
           <div>
-            <span className={styles.kicker}>PHASE 3A · READ-ONLY ACCOUNTING</span>
-            <h2>Setiap transaksi harus dapat ditelusuri sampai debit, kredit, dan posisi keuangannya.</h2>
+            <span className={styles.kicker}>PHASE 3B · ACCOUNTING CONTROL</span>
+            <h2>Setiap transaksi dapat ditelusuri ke debit, kredit, dan konfigurasi akun yang membentuk jurnalnya.</h2>
             <p>
-              Tampilan ini membaca jurnal POSTED dari POS, void, receiving, invoice supplier, dan payment. Belum ada manual journal dan belum ada configurable COA pada Phase 3A.
+              General Ledger tetap membaca journal code snapshot yang sudah POSTED. Jika v5 aktif, nama akun berasal dari COA organisasi yang versioned; perubahan mapping baru tidak menulis ulang sejarah jurnal.
             </p>
           </div>
           <div className={styles.roleCard}>
             <span>Schema aktif</span>
             <strong>{schema.currentVersion || "—"}</strong>
-            <small>{schemaCurrent ? "Procurement accounting v4 tersedia" : "Ada migration lanjutan yang perlu dicek"}</small>
+            <small>{accountingConfigReady ? "Configurable COA + mapping tersedia" : procurementAccountingReady ? "Accounting read model tersedia" : "Ada migration lanjutan yang perlu dicek"}</small>
           </div>
         </section>
 
-        {!schemaCurrent ? (
+        {!procurementAccountingReady ? (
           <div className={styles.warning}>
-            Schema belum terdeteksi pada procurement_accounting_v4. Laporan jurnal lama tetap dapat dibaca, tetapi Procurement/AP terbaru membutuhkan upgrade D1. <Link href="/setup/database">Buka Database Setup →</Link>
+            Procurement accounting belum terdeteksi. Laporan jurnal lama tetap dapat dibaca, tetapi receiving/invoice/AP terbaru membutuhkan upgrade D1. <Link href="/setup/database">Buka Database Setup →</Link>
+          </div>
+        ) : null}
+        {procurementAccountingReady && !accountingConfigReady ? (
+          <div className={styles.warning}>
+            Accounting read model aktif, tetapi configurable COA/mapping v5 belum diterapkan. <Link href="/setup/database">Apply accounting_config_v5 →</Link>
           </div>
         ) : null}
 
@@ -149,7 +161,7 @@ export default async function FinancePage({ searchParams }: PageProps) {
               <div><span>Laba berjalan</span><strong>{rupiah(model.netIncome)}</strong></div>
               <div className={styles.statementTotal}><span>Equation gap</span><strong>{rupiah(model.equationGap)}</strong></div>
             </div>
-            <p className={styles.note}>Gap tidak disembunyikan. Opening equity dan akun configurable akan diselesaikan di Phase 3B.</p>
+            <p className={styles.note}>Gap tidak disembunyikan. Opening equity/manual journal tetap belum dibuka pada Phase 3B.</p>
           </article>
         </section>
 
@@ -165,7 +177,7 @@ export default async function FinancePage({ searchParams }: PageProps) {
           {trialBalance.length ? (
             <div className={styles.tableWrap}><table><thead><tr><th>Akun</th><th>Debit</th><th>Kredit</th><th>Saldo D−K</th><th></th></tr></thead><tbody>
               {trialBalance.map((row) => <tr key={row.account_code}>
-                <td><strong>{row.account_code}</strong><span>{foundationAccountName(row.account_code)}</span></td>
+                <td><strong>{row.account_code}</strong><span>{accountName(row.account_code)}</span></td>
                 <td>{rupiah(row.debit_amount)}</td><td>{rupiah(row.credit_amount)}</td><td><strong>{rupiah(row.balance_amount)}</strong></td>
                 <td><Link href={`/finance?from=${period.from}&to=${period.to}&account=${encodeURIComponent(row.account_code)}`}>Ledger →</Link></td>
               </tr>)}
@@ -174,10 +186,10 @@ export default async function FinancePage({ searchParams }: PageProps) {
         </section>
 
         <section className={styles.panel}>
-          <div className={styles.panelHeader}><div><span className={styles.kicker}>GENERAL LEDGER</span><h3>{account ? `${account} · ${foundationAccountName(account)}` : "300 baris ledger terbaru"}</h3></div><span className={styles.pill}>{ledger.length} lines</span></div>
+          <div className={styles.panelHeader}><div><span className={styles.kicker}>GENERAL LEDGER</span><h3>{account ? `${account} · ${accountName(account)}` : "300 baris ledger terbaru"}</h3></div><span className={styles.pill}>{ledger.length} lines</span></div>
           {ledger.length ? <div className={styles.tableWrap}><table><thead><tr><th>Waktu / Jurnal</th><th>Akun</th><th>Sumber</th><th>Debit</th><th>Kredit</th><th>Memo</th></tr></thead><tbody>{ledger.map((line, index) => <tr key={`${line.journal_entry_id}-${line.account_code}-${index}`}>
             <td><strong>{line.entry_number}</strong><span>{dateTime(line.posted_at || line.created_at)}</span></td>
-            <td><strong>{line.account_code}</strong><span>{foundationAccountName(line.account_code)}</span></td>
+            <td><strong>{line.account_code}</strong><span>{accountName(line.account_code)}</span></td>
             <td><strong>{line.source_type}</strong><span>{line.description}</span></td>
             <td>{line.debit_amount ? rupiah(line.debit_amount) : "—"}</td><td>{line.credit_amount ? rupiah(line.credit_amount) : "—"}</td><td>{line.memo || "—"}</td>
           </tr>)}</tbody></table></div> : <div className={styles.empty}>Tidak ada ledger line pada filter ini.</div>}
@@ -194,8 +206,8 @@ export default async function FinancePage({ searchParams }: PageProps) {
         </section>
 
         <section className={styles.foundationNote}>
-          <strong>Accounting foundation notice</strong>
-          <p>Nama akun pada Phase 3A berasal dari mapping foundation yang saat ini dipakai POS/Procurement. Phase 3B akan memindahkan COA dan transaction mapping menjadi configurable + versioned + approval-controlled.</p>
+          <strong>Accounting control notice</strong>
+          <p>{accountingConfigReady ? "COA dan mapping event sudah configurable, versioned, dan approval-controlled. Jurnal historis tetap memakai account code yang diposting saat transaksi terjadi." : "Nama akun masih memakai foundation mapping sampai accounting_config_v5 diterapkan."} Manual journal dan period closing belum dibuka.</p>
         </section>
       </div>
     </main>
