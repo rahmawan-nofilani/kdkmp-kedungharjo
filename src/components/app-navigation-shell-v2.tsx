@@ -40,7 +40,7 @@ const groups: Array<{ section: string; items: NavItem[] }> = [
     { label: "Pengaturan Akuntansi", href: "/finance/settings", anyPermissions: ["ACCOUNTING_MANAGE", "ACCOUNTING_APPROVE"] },
   ]},
   { section: "Kontrol", items: [
-    { label: "Persetujuan Pembelian", href: "/procurement", permission: "PURCHASE_APPROVE" },
+    { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE"] },
     { label: "Laporan Penjualan", href: "/reports/daily-sales", permission: "REPORT_VIEW" },
     { label: "Database Setup", href: "/setup/database", permission: "ORG_MANAGE", badge: "Dev" },
   ]},
