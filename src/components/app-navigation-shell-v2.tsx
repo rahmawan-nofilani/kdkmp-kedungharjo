@@ -40,6 +40,9 @@ const groups: Array<{ section: string; items: NavItem[] }> = [
     { label: "Kesiapan Tutup Buku", href: "/finance/closing-readiness", permission: "FINANCE_VIEW" },
     { label: "Pengaturan Akuntansi", href: "/finance/settings", anyPermissions: ["ACCOUNTING_MANAGE", "ACCOUNTING_APPROVE"] },
   ]},
+  { section: "Simpan Pinjam", items: [
+    { label: "Produk Simpanan", href: "/savings/products", permission: "SAVINGS_PRODUCT_VIEW", badge: "Config" },
+  ]},
   { section: "Kontrol", items: [
     { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","ORG_MANAGE"] },
     { label: "Laporan Penjualan", href: "/reports/daily-sales", permission: "REPORT_VIEW" },
