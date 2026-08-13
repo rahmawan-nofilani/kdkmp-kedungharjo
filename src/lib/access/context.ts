@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
 export type AccessContext = {
@@ -29,68 +30,93 @@ export type AccessContext = {
   }>;
 };
 
-export async function getAccessContext(): Promise<AccessContext | null> {
+type MembershipGraph = {
+  id: string;
+  status: string;
+  organization: {
+    id: string;
+    code: string;
+    name: string;
+    legal_name: string | null;
+  } | null;
+  role: {
+    id: string;
+    code: string;
+    name: string;
+    role_permissions: Array<{
+      permission: { code: string } | null;
+    }> | null;
+  } | null;
+  user_unit_scopes: Array<{
+    unit: {
+      id: string;
+      code: string;
+      name: string;
+      unit_type: string;
+    } | null;
+  }> | null;
+};
+
+async function loadAccessContext(): Promise<AccessContext | null> {
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getUser();
   const user = authData.user;
 
   if (!user) return null;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name,status")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const { data: membership } = await supabase
-    .from("organization_memberships")
-    .select("id,organization_id,role_id,status")
-    .eq("user_id", user.id)
-    .eq("status", "ACTIVE")
-    .maybeSingle();
-
-  if (!membership) return null;
-
-  const [{ data: organization }, { data: role }, { data: rolePermissionRows }, { data: unitScopeRows }] =
-    await Promise.all([
-      supabase
-        .from("organizations")
-        .select("id,code,name,legal_name")
-        .eq("id", membership.organization_id)
-        .maybeSingle(),
-      supabase
-        .from("roles")
-        .select("id,code,name")
-        .eq("id", membership.role_id)
-        .maybeSingle(),
-      supabase
-        .from("role_permissions")
-        .select("permission_id")
-        .eq("role_id", membership.role_id),
-      supabase
-        .from("user_unit_scopes")
-        .select("unit_id")
-        .eq("membership_id", membership.id),
-    ]);
-
-  if (!organization || !role) return null;
-
-  const permissionIds = (rolePermissionRows ?? []).map((row) => row.permission_id);
-  const unitIds = (unitScopeRows ?? []).map((row) => row.unit_id);
-
-  const [{ data: permissionRows }, { data: unitRows }] = await Promise.all([
-    permissionIds.length
-      ? supabase.from("permissions").select("code").in("id", permissionIds)
-      : Promise.resolve({ data: [] as Array<{ code: string }> }),
-    unitIds.length
-      ? supabase
-          .from("organization_units")
-          .select("id,code,name,unit_type")
-          .in("id", unitIds)
-      : Promise.resolve({
-          data: [] as Array<{ id: string; code: string; name: string; unit_type: string }>,
-        }),
+  const [{ data: profile }, { data: membership, error: membershipError }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name,status")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("organization_memberships")
+      .select(`
+        id,
+        status,
+        organization:organizations!organization_memberships_organization_id_fkey(
+          id,code,name,legal_name
+        ),
+        role:roles!organization_memberships_role_id_fkey(
+          id,code,name,
+          role_permissions(
+            permission:permissions!role_permissions_permission_id_fkey(code)
+          )
+        ),
+        user_unit_scopes(
+          unit:organization_units!user_unit_scopes_unit_id_fkey(
+            id,code,name,unit_type
+          )
+        )
+      `)
+      .eq("user_id", user.id)
+      .eq("status", "ACTIVE")
+      .maybeSingle(),
   ]);
+
+  if (membershipError || !membership) return null;
+
+  const graph = membership as unknown as MembershipGraph;
+  if (!graph.organization || !graph.role) return null;
+
+  const permissions = Array.from(
+    new Set(
+      (graph.role.role_permissions ?? [])
+        .map((row) => row.permission?.code)
+        .filter((code): code is string => Boolean(code)),
+    ),
+  ).sort();
+
+  const units = (graph.user_unit_scopes ?? [])
+    .map((row) => row.unit)
+    .filter((unit): unit is NonNullable<typeof unit> => Boolean(unit))
+    .map((unit) => ({
+      id: unit.id,
+      code: unit.code,
+      name: unit.name,
+      unitType: unit.unit_type,
+    }));
 
   return {
     user: {
@@ -102,22 +128,19 @@ export async function getAccessContext(): Promise<AccessContext | null> {
       status: profile?.status || "ACTIVE",
     },
     organization: {
-      id: organization.id,
-      code: organization.code,
-      name: organization.name,
-      legalName: organization.legal_name,
+      id: graph.organization.id,
+      code: graph.organization.code,
+      name: graph.organization.name,
+      legalName: graph.organization.legal_name,
     },
     role: {
-      id: role.id,
-      code: role.code,
-      name: role.name,
+      id: graph.role.id,
+      code: graph.role.code,
+      name: graph.role.name,
     },
-    permissions: (permissionRows ?? []).map((row) => row.code).sort(),
-    units: (unitRows ?? []).map((row) => ({
-      id: row.id,
-      code: row.code,
-      name: row.name,
-      unitType: row.unit_type,
-    })),
+    permissions,
+    units,
   };
 }
+
+export const getAccessContext = cache(loadAccessContext);
