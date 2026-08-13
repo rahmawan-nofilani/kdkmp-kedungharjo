@@ -20,7 +20,7 @@ async function requireAccess(permission: "ACCOUNTING_MANAGE" | "ACCOUNTING_APPRO
   if (!access) redirect("/login");
   if (!access.permissions.includes(permission)) redirect("/finance/settings?error=Permission tidak tersedia.");
   const schema = await getD1SchemaStatus();
-  if (schema.currentVersion !== "accounting_config_v5") redirect("/setup/database");
+  if (!schema.features.accountingConfig) redirect("/setup/database");
   return access;
 }
 
