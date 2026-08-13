@@ -6,8 +6,7 @@ import { initializeD1 } from "./actions";
 import styles from "./setup.module.css";
 
 export const dynamic = "force-dynamic";
-
-type PageProps = { searchParams: Promise<{ status?: string; error?: string; stage?: string; step?: string; detail?: string }> };
+type PageProps = { searchParams: Promise<{ status?: string; error?: string; detail?: string }> };
 
 export default async function DatabaseSetupPage({ searchParams }: PageProps) {
   const access = await getAccessContext();
@@ -15,63 +14,30 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
   if (!access.permissions.includes("ORG_MANAGE")) redirect("/dashboard");
   const params = await searchParams;
   const status = await getD1SchemaStatus();
-  const version = status.currentVersion || "";
-  const needsV2 = version === "transaction_core_v1";
-  const needsV3 = version === "inventory_control_v2";
-  const needsV4 = version === "procurement_v3";
-  const needsV5 = version === "procurement_accounting_v4";
-  const needsV6 = version === "accounting_config_v5";
-  const needsV7 = version === "accounting_runtime_v6";
-  const needsV8 = version === "treasury_period_v7";
-  const needsV9 = version === "controlled_journal_v8";
-  const known = ["procurement_v3","procurement_accounting_v4","accounting_config_v5","accounting_runtime_v6","treasury_period_v7","controlled_journal_v8","asset_depreciation_v9"];
-  const v3Available = known.includes(version);
-  const v4Available = ["procurement_accounting_v4","accounting_config_v5","accounting_runtime_v6","treasury_period_v7","controlled_journal_v8","asset_depreciation_v9"].includes(version);
-  const v5Available = ["accounting_config_v5","accounting_runtime_v6","treasury_period_v7","controlled_journal_v8","asset_depreciation_v9"].includes(version);
-  const v6Available = ["accounting_runtime_v6","treasury_period_v7","controlled_journal_v8","asset_depreciation_v9"].includes(version);
-  const v7Available = ["treasury_period_v7","controlled_journal_v8","asset_depreciation_v9"].includes(version);
-  const v8Available = ["controlled_journal_v8","asset_depreciation_v9"].includes(version);
-  const v9Available = version === "asset_depreciation_v9";
-
-  const upgradeLabel = !status.initialized
-    ? "Initialize & Upgrade D1"
-    : needsV2 ? "Apply Inventory Control v2"
-    : needsV3 ? "Apply Procurement v3"
-    : needsV4 ? "Apply Procurement Accounting v4"
-    : needsV5 ? "Apply Accounting Config v5"
-    : needsV6 ? "Apply Accounting Runtime v6"
-    : needsV7 ? "Apply Treasury & Period Control v7"
-    : needsV8 ? "Apply Controlled Journal v8"
-    : needsV9 ? "Apply Aset & Penyusutan v9"
-    : "Apply Pending D1 Upgrades";
+  const rows = [
+    ["V1", "Inti Transaksi", status.features.transactionCore],
+    ["V2", "Kontrol Stok", status.features.inventoryControl],
+    ["V3", "Pembelian", status.features.procurement],
+    ["V4", "Akuntansi Pembelian", status.features.procurementAccounting],
+    ["V5", "Daftar Akun", status.features.accountingConfig],
+    ["V6", "Mapping Akuntansi", status.features.accountingRuntime],
+    ["V7", "Kas, Bank & Periode", status.features.treasuryPeriod],
+    ["V8", "Jurnal Terkontrol", status.features.controlledJournal],
+    ["V9", "Aset & Penyusutan", status.features.assetDepreciation],
+    ["V10", "Kapasitas Sistem", status.features.systemCapacity],
+  ] as const;
 
   return <main className={styles.page}><section className={styles.card}>
-    <p className={styles.kicker}>DEVELOPMENT SETUP · D1</p><h1>Transaction Database</h1>
-    <p className={styles.lead}>D1 memakai migration marker bertahap. Data transaksi tidak di-reset ketika modul baru ditambahkan; Manager cukup menjalankan pending migration setelah deployment baru aktif.</p>
+    <p className={styles.kicker}>PENGATURAN DEVELOPMENT · D1</p><h1>Database Transaksi</h1>
+    <p className={styles.lead}>Upgrade menambah kemampuan baru tanpa menghapus transaksi lama.</p>
     <div className={styles.statusGrid}>
       <article className={styles.status}><span>D1 binding</span><strong className={status.bound ? styles.ready : styles.wait}>{status.bound ? "CONNECTED" : "WAITING DEPLOY"}</strong></article>
-      <article className={styles.status}><span>Schema readiness</span><strong className={status.current ? styles.ready : styles.wait}>{status.current ? "CURRENT" : status.initialized ? "UPGRADE REQUIRED" : "NOT INITIALIZED"}</strong></article>
+      <article className={styles.status}><span>Kesiapan schema</span><strong className={status.current ? styles.ready : styles.wait}>{status.current ? "CURRENT" : status.initialized ? "UPGRADE REQUIRED" : "NOT INITIALIZED"}</strong></article>
     </div>
-    <div className={styles.steps}>
-      <div><b>VERSION</b><span>{status.currentVersion || "Belum ada schema marker"}</span></div>
-      <div><b>CORE</b><span>{status.initialized ? "Transaction Core v1 tersedia" : "Transaction Core belum tersedia"}</span></div>
-      <div><b>V2</b><span>{needsV2 ? "Inventory Control v2 menunggu migration" : status.initialized ? "Inventory Control v2 tersedia / sudah dilewati" : "Menunggu Core"}</span></div>
-      <div><b>V3</b><span>{v3Available ? "Procurement v3 tersedia" : "Procurement v3 menunggu migration"}</span></div>
-      <div><b>V4</b><span>{v4Available ? "Procurement Accounting v4 tersedia" : "Procurement Accounting v4 menunggu migration"}</span></div>
-      <div><b>V5</b><span>{v5Available ? "Configurable COA & Accounting Mapping v5 tersedia" : "Accounting Config v5 menunggu migration"}</span></div>
-      <div><b>V6</b><span>{v6Available ? "Runtime Accounting Mapping v6 tersedia" : "Accounting Runtime v6 menunggu migration"}</span></div>
-      <div><b>V7</b><span>{v7Available ? "Kas/Bank + Kontrol Periode v7 tersedia" : "Treasury Period v7 menunggu migration"}</span></div>
-      <div><b>V8</b><span>{v8Available ? "Jurnal Terkontrol + Saldo Awal v8 tersedia" : "Controlled Journal v8 menunggu migration"}</span></div>
-      <div><b>V9</b><span>{v9Available ? "Aset Tetap + Penyusutan v9 tersedia" : "Aset & Penyusutan v9 menunggu migration"}</span></div>
-      <div><b>DATA</b><span>Migration bersifat additive dan tidak menghapus transaksi yang sudah ada.</span></div>
-    </div>
-    {params.status === "updated" ? <div className={styles.alert}>Migration D1 berhasil diterapkan. Schema sekarang sudah pada versi terbaru.</div> : null}
-    {params.status === "ready" ? <div className={styles.alert}>D1 sudah berada pada schema terbaru dan siap digunakan.</div> : null}
-    {params.error ? <div className={`${styles.alert} ${styles.error}`}><strong>Migration belum berhasil.</strong>{params.stage ? <span> Stage {params.stage}.</span> : null}{params.step ? <span> Gagal pada statement #{params.step}.</span> : null}{params.detail ? <div style={{ marginTop: 8, wordBreak: "break-word" }}>{params.detail}</div> : null}</div> : null}
-    <div className={styles.actions}>
-      {!status.current ? <form action={initializeD1}><button type="submit" disabled={!status.bound}>{upgradeLabel}</button></form> : <Link href="/finance/assets">Lanjut ke Aset Tetap</Link>}
-      <Link href="/finance">Keuangan</Link><Link href="/finance/assets">Aset</Link><Link href="/finance/closing-readiness">Kesiapan Tutup Buku</Link><Link href="/finance/journals">Jurnal</Link><Link href="/finance/treasury">Kas & Bank</Link><Link href="/dashboard">Dashboard</Link>
-    </div>
-    <p className={styles.note}>Hanya akun dengan ORG_MANAGE yang dapat menjalankan migration. Marker versi baru ditulis setelah seluruh statement selesai sehingga migration aman dijalankan ulang.</p>
+    <div className={styles.steps}><div><b>VERSI</b><span>{status.currentVersion || "Belum ada schema"}</span></div>{rows.map(([code,label,ready])=><div key={code}><b>{code}</b><span>{ready ? `${label} tersedia` : `${label} menunggu upgrade`}</span></div>)}</div>
+    {params.status ? <div className={styles.alert}>Proses database selesai. Periksa status CURRENT di atas.</div> : null}
+    {params.error ? <div className={`${styles.alert} ${styles.error}`}>Upgrade belum berhasil. {params.detail || "Coba lagi setelah memastikan deployment terbaru aktif."}</div> : null}
+    <div className={styles.actions}>{!status.current ? <form action={initializeD1}><button type="submit" disabled={!status.bound}>Terapkan Upgrade yang Tertunda</button></form> : <Link href="/capacity">Buka Kapasitas Sistem</Link>}<Link href="/capacity">Kapasitas Sistem</Link><Link href="/dashboard">Dashboard</Link></div>
+    <p className={styles.note}>Hanya Manager dengan ORG_MANAGE yang dapat menjalankan upgrade.</p>
   </section></main>;
 }
