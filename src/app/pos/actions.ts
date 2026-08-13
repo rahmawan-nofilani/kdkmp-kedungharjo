@@ -21,8 +21,6 @@ export type CashSaleActionState = {
   duplicate?: boolean;
 };
 
-export const initialCashSaleState: CashSaleActionState = { status: "idle" };
-
 function safeMessage(error: unknown) {
   return (error instanceof Error ? error.message : "Transaksi belum dapat diproses.").slice(0, 180);
 }
