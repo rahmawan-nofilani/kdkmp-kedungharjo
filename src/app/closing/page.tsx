@@ -76,7 +76,7 @@ export default async function ClosingPage({ searchParams }: PageProps) {
           </div>
           <div className={styles.identity}>
             <span>Operator</span>
-            <strong>{access.profile.full_name || access.user.email}</strong>
+            <strong>{access.profile.fullName || access.user.email}</strong>
             <small>{access.organization.name}</small>
           </div>
         </section>
