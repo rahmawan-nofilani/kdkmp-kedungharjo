@@ -43,6 +43,7 @@ const groups: Array<{ section: string; items: NavItem[] }> = [
   { section: "Kontrol", items: [
     { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","ORG_MANAGE"] },
     { label: "Laporan Penjualan", href: "/reports/daily-sales", permission: "REPORT_VIEW" },
+    { label: "Kapasitas Sistem", href: "/capacity", permission: "ORG_MANAGE", badge: "Zero Cost" },
     { label: "Pengaturan Database", href: "/setup/database", permission: "ORG_MANAGE", badge: "Dev" },
   ]},
 ];

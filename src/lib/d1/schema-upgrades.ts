@@ -6,7 +6,8 @@ import { applyAccountingConfigV5 } from "./accounting-config-schema";
 import { applyAccountingRuntimeV6 } from "./accounting-runtime-schema";
 import { applyTreasuryPeriodV7 } from "./treasury-period-schema";
 import { applyControlledJournalV8 } from "./controlled-journal-schema";
-import { applyAssetDepreciationV9, ASSET_DEPRECIATION_VERSION } from "./asset-schema";
+import { applyAssetDepreciationV9 } from "./asset-schema";
+import { applySystemCapacityV10, SYSTEM_CAPACITY_VERSION } from "./system-capacity-schema";
 
 export const INVENTORY_CONTROL_VERSION = "inventory_control_v2";
 
@@ -143,6 +144,7 @@ export async function applyPendingD1Migrations() {
   const treasuryPeriod = await applyTreasuryPeriodV7();
   const controlledJournal = await applyControlledJournalV8();
   const assetDepreciation = await applyAssetDepreciationV9();
+  const systemCapacity = await applySystemCapacityV10();
 
   return {
     initialized: true,
@@ -155,7 +157,8 @@ export async function applyPendingD1Migrations() {
       accountingRuntime.alreadyApplied &&
       treasuryPeriod.alreadyApplied &&
       controlledJournal.alreadyApplied &&
-      assetDepreciation.alreadyApplied,
+      assetDepreciation.alreadyApplied &&
+      systemCapacity.alreadyApplied,
     statements:
       core.statements +
       inventory.statements +
@@ -165,7 +168,8 @@ export async function applyPendingD1Migrations() {
       accountingRuntime.statements +
       treasuryPeriod.statements +
       controlledJournal.statements +
-      assetDepreciation.statements,
-    currentVersion: ASSET_DEPRECIATION_VERSION,
+      assetDepreciation.statements +
+      systemCapacity.statements,
+    currentVersion: SYSTEM_CAPACITY_VERSION,
   };
 }
