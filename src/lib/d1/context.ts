@@ -49,21 +49,33 @@ export async function getD1SchemaStatus() {
     if (!markerTable?.name) return { bound: true, initialized: false, current: false, currentVersion: null as string | null, pendingUpgrade: false };
 
     const versions = await db
-      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3','procurement_accounting_v4')")
+      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3','procurement_accounting_v4','accounting_config_v5')")
       .all<{ version: string }>();
     const applied = new Set(versions.results.map((row) => row.version));
     const coreReady = applied.has("transaction_core_v1");
     const inventoryReady = applied.has("inventory_control_v2");
     const procurementReady = applied.has("procurement_v3");
-    const accountingReady = applied.has("procurement_accounting_v4");
+    const procurementAccountingReady = applied.has("procurement_accounting_v4");
+    const accountingConfigReady = applied.has("accounting_config_v5");
 
-    const currentVersion = accountingReady ? "procurement_accounting_v4" : procurementReady ? "procurement_v3" : inventoryReady ? "inventory_control_v2" : coreReady ? "transaction_core_v1" : null;
+    const currentVersion = accountingConfigReady
+      ? "accounting_config_v5"
+      : procurementAccountingReady
+        ? "procurement_accounting_v4"
+        : procurementReady
+          ? "procurement_v3"
+          : inventoryReady
+            ? "inventory_control_v2"
+            : coreReady
+              ? "transaction_core_v1"
+              : null;
+
     return {
       bound: true,
       initialized: coreReady,
-      current: coreReady && inventoryReady && procurementReady && accountingReady,
+      current: coreReady && inventoryReady && procurementReady && procurementAccountingReady && accountingConfigReady,
       currentVersion,
-      pendingUpgrade: coreReady && (!inventoryReady || !procurementReady || !accountingReady),
+      pendingUpgrade: coreReady && (!inventoryReady || !procurementReady || !procurementAccountingReady || !accountingConfigReady),
     };
   } catch {
     return { bound: false, initialized: false, current: false, currentVersion: null as string | null, pendingUpgrade: false };
