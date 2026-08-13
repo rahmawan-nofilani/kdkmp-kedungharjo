@@ -50,6 +50,8 @@ const ProductButton = memo(function ProductButton({
       className={styles.productCard}
       onClick={() => onAdd(product)}
       disabled={unavailable}
+      aria-label={`Tambah ${product.name} ke keranjang`}
+      title={unavailable ? "Stok habis" : `Tambah ${product.name}`}
     >
       <span className={styles.productSku}>{product.sku}</span>
       <strong>{product.name}</strong>
@@ -125,7 +127,6 @@ export function PosTerminal({
     );
   }, [products, query]);
 
-  // Keep the DOM light on teller PCs. Search still reaches the complete catalog.
   const visibleProducts = useMemo(() => matchingProducts.slice(0, 60), [matchingProducts]);
 
   const { total, totalQty, itemsJson } = useMemo(() => {
@@ -193,6 +194,7 @@ export function PosTerminal({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Cari nama, SKU, atau barcode..."
+              aria-label="Cari produk"
               autoFocus
             />
           </div>
@@ -229,23 +231,40 @@ export function PosTerminal({
 
         <div className={styles.cartLines}>
           {cart.length ? (
-            cart.map((line) => (
-              <div className={styles.cartLine} key={line.product.id}>
-                <div className={styles.lineCopy}>
-                  <strong>{line.product.name}</strong>
-                  <span>{rupiah(line.product.sell_amount)} / {line.product.unit_name}</span>
+            cart.map((line) => {
+              const atStockLimit = Boolean(
+                line.product.track_stock && line.quantity >= line.product.stock_qty,
+              );
+
+              return (
+                <div className={styles.cartLine} key={line.product.id}>
+                  <div className={styles.lineCopy}>
+                    <strong>{line.product.name}</strong>
+                    <span>{rupiah(line.product.sell_amount)} / {line.product.unit_name}</span>
+                  </div>
+                  <div className={styles.qtyControl} aria-label={`Jumlah ${line.product.name}`}>
+                    <button
+                      type="button"
+                      onClick={() => changeQuantity(line.product.id, -1)}
+                      aria-label={`Kurangi ${line.product.name}`}
+                      title="Kurangi jumlah"
+                    >−</button>
+                    <strong>{line.quantity}</strong>
+                    <button
+                      type="button"
+                      onClick={() => changeQuantity(line.product.id, 1)}
+                      disabled={atStockLimit}
+                      aria-label={`Tambah ${line.product.name}`}
+                      title={atStockLimit ? "Jumlah sudah sama dengan stok tersedia" : "Tambah jumlah"}
+                    >+</button>
+                  </div>
+                  <div className={styles.lineTotal}>
+                    <strong>{rupiah(line.product.sell_amount * line.quantity)}</strong>
+                    <button type="button" onClick={() => removeLine(line.product.id)}>Hapus</button>
+                  </div>
                 </div>
-                <div className={styles.qtyControl}>
-                  <button type="button" onClick={() => changeQuantity(line.product.id, -1)}>−</button>
-                  <strong>{line.quantity}</strong>
-                  <button type="button" onClick={() => changeQuantity(line.product.id, 1)}>+</button>
-                </div>
-                <div className={styles.lineTotal}>
-                  <strong>{rupiah(line.product.sell_amount * line.quantity)}</strong>
-                  <button type="button" onClick={() => removeLine(line.product.id)}>Hapus</button>
-                </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <div className={styles.emptyCart}>Klik produk untuk menambah ke keranjang.</div>
           )}

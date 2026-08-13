@@ -1,5 +1,6 @@
 .page {
   min-height: 100vh;
+  color-scheme: light;
   background: #eef2f5;
   color: #172033;
 }
@@ -39,7 +40,8 @@
 .card > p { margin: 8px 0 0; color: #748091; font-size: 11px; line-height: 1.6; }
 
 .lookup { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 18px; }
-.lookup input { min-height: 50px; padding: 0 15px; border: 1px solid #d4dce4; border-radius: 11px; outline: none; font-size: 13px; }
+.lookup input { min-height: 50px; padding: 0 15px; border: 1px solid #d4dce4; border-radius: 11px; outline: none; background:#fff; color:#172033; caret-color:#172033; -webkit-text-fill-color:#172033; font-size: 13px; }
+.lookup input::placeholder { color:#929ba7; opacity:1; }
 .lookup input:focus { border-color: #b78d3d; box-shadow: 0 0 0 3px rgba(194,153,75,.12); }
 .lookup button { min-width: 110px; border: 0; border-radius: 11px; background: #0f1f30; color: #fff; font-size: 11px; font-weight: 900; cursor: pointer; }
 
@@ -48,7 +50,7 @@
 .quick span { color: #8a95a4; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: .07em; }
 .quick strong { color: #263247; font-size: 13px; }
 
-.shiftPanel{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,.5fr);gap:18px;align-items:end;margin-top:18px;padding:18px;border:1px solid #dfe5ea;border-radius:13px;background:#f7f9fb}.shiftPanel h2{margin:0}.shiftPanel p:not(.kicker){margin:7px 0 0;color:#738092;font-size:11px;line-height:1.6}.shiftForm{display:grid;gap:9px}.shiftForm label{display:grid;gap:6px;color:#596577;font-size:10px;font-weight:800}.shiftForm input{min-height:42px;padding:0 11px;border:1px solid #d5dde5;border-radius:9px;background:#fff;outline:none}.shiftForm button{min-height:42px;border:0;border-radius:9px;background:#0f1f30;color:#fff;font-size:11px;font-weight:900}.shiftForm button:disabled{opacity:.45;cursor:not-allowed}.shiftForm .closeButton{background:#c21e2a}
+.shiftPanel{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,.5fr);gap:18px;align-items:end;margin-top:18px;padding:18px;border:1px solid #dfe5ea;border-radius:13px;background:#f7f9fb}.shiftPanel h2{margin:0}.shiftPanel p:not(.kicker){margin:7px 0 0;color:#738092;font-size:11px;line-height:1.6}.shiftForm{display:grid;gap:9px}.shiftForm label{display:grid;gap:6px;color:#596577;font-size:10px;font-weight:800}.shiftForm input{min-height:44px;padding:0 12px;border:1px solid #cfd8e2;border-radius:9px;background:#fff;color:#172033;caret-color:#172033;-webkit-text-fill-color:#172033;font-size:14px;font-weight:800;outline:none}.shiftForm input:focus{border-color:#c2994b;box-shadow:0 0 0 3px rgba(194,153,75,.13)}.shiftForm input::placeholder{color:#929ba7;opacity:1}.shiftForm button{min-height:44px;border:0;border-radius:9px;background:#0f1f30;color:#fff;font-size:11px;font-weight:900;box-shadow:0 5px 14px rgba(15,31,48,.14)}.shiftForm button:disabled{opacity:.45;cursor:not-allowed}.shiftForm .closeButton{background:#c21e2a;box-shadow:0 5px 14px rgba(194,30,42,.15)}
 
 .readiness { display: grid; gap: 9px; margin-top: 16px; }
 .readiness div { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 11px 12px; border-radius: 10px; background: #f7f9fb; }
