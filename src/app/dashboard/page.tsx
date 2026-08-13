@@ -16,14 +16,16 @@ const navigation: Array<{ section: string; items: NavItem[] }> = [
     { label: "POS", href: "/pos", permission: "POS_ACCESS", badge: "Demo" },
     { label: "Teller / Shift", href: "/teller", permission: "POS_ACCESS", badge: "Live" },
     { label: "Anggota", href: "/members", permission: "MEMBER_VIEW", badge: "Live" },
-    { label: "Inventory", href: "/inventory", permission: "INVENTORY_VIEW", badge: "Live" },
-    { label: "Procurement", href: "/procurement", permission: "PURCHASE_VIEW", badge: "Live" },
+    { label: "Stok & Gudang", href: "/inventory", permission: "INVENTORY_VIEW", badge: "Live" },
+    { label: "Pembelian", href: "/procurement", permission: "PURCHASE_VIEW", badge: "Live" },
   ]},
   { section: "Kontrol", items: [
     { label: "Keuangan", href: "/finance", permission: "FINANCE_VIEW", badge: "Live" },
     { label: "Kas & Bank", href: "/finance/treasury", permission: "FINANCE_VIEW", badge: "Live" },
-    { label: "Jurnal", href: "/finance/journals", permission: "FINANCE_VIEW", badge: "New" },
-    { label: "Approval", href: "/procurement", permission: "PURCHASE_APPROVE", badge: "PR" },
+    { label: "Jurnal", href: "/finance/journals", permission: "FINANCE_VIEW", badge: "Live" },
+    { label: "Aset Tetap", href: "/finance/assets", permission: "FINANCE_VIEW", badge: "New" },
+    { label: "Kesiapan Tutup Buku", href: "/finance/closing-readiness", permission: "FINANCE_VIEW", badge: "New" },
+    { label: "Persetujuan", href: "/procurement", permission: "PURCHASE_APPROVE", badge: "PR" },
     { label: "Laporan", href: "/reports/daily-sales", permission: "REPORT_VIEW", badge: "Live" },
   ]},
 ];
@@ -48,7 +50,7 @@ export default async function DashboardPage() {
     <section className="workspace">
       <header className="workspace-header"><div><p className="workspace-kicker">{access.organization.name}</p><h1>Selamat datang, {firstName}</h1></div><div className="header-status"><span className="status-dot" /><div><strong>Development online</strong><span>Cloudflare + Supabase + D1</span></div></div></header>
       <div className="workspace-content">
-        <section className="welcome-panel"><div><p className="eyebrow dashboard-eyebrow">PHASE 3E · CONTROLLED JOURNAL</p><h2>Finance core sekarang memiliki Opening Balance dan Manual Journal yang tidak dapat melewati maker-checker.</h2><p>POS, inventory, procurement/AP, accounting mapping, treasury, period guard, opening balance, dan controlled journal mengikuti satu ledger serta audit trail. Gunakan data DEMO sampai Finance UAT dan security hardening selesai.</p></div><div className="role-chip"><span>Role aktif</span><strong>{access.role.name}</strong></div></section>
+        <section className="welcome-panel"><div><p className="eyebrow dashboard-eyebrow">PHASE 3F · ASET & TUTUP BUKU</p><h2>Keuangan sekarang mulai mencakup aset tetap, penyusutan bulanan, dan checklist sebelum tutup buku.</h2><p>Bahasa operasional dibuat lebih sederhana. Istilah teknis tetap disimpan di sistem/audit, tetapi pengguna melihat istilah seperti Nilai Buku, Penyusutan Garis Lurus, Pencocokan Bank, dan Kesiapan Tutup Buku.</p></div><div className="role-chip"><span>Role aktif</span><strong>{access.role.name}</strong></div></section>
         <section className="metric-grid" aria-label="Status fondasi">
           <article className="metric-card"><span>Organisasi</span><strong>{access.organization.name}</strong><small>{access.organization.code}</small></article>
           <article className="metric-card"><span>Unit Scope</span><strong>{access.units.length}</strong><small>{access.units.map((unit) => unit.name).join(", ") || "Belum ada unit"}</small></article>
@@ -56,8 +58,8 @@ export default async function DashboardPage() {
           <article className="metric-card"><span>Status akun</span><strong>{access.profile.status}</strong><small>{access.user.email}</small></article>
         </section>
         <section className="dashboard-grid">
-          <article className="panel-card next-panel"><div className="panel-heading"><div><span className="panel-label">PHASE 3E ACTIVE</span><h3>Controlled Accounting Chain</h3></div><span className="panel-pill">Maker-Checker</span></div><p>Opening Balance dan jurnal manual dibuat sebagai DRAFT, disubmit, lalu hanya user berbeda yang dapat Approve & Post. Journal POSTED tidak diedit; reversal membuat journal baru.</p><div className="step-list"><div><b>01</b><span>Operational subledgers + GL ✓</span></div><div><b>02</b><span>Configurable COA + runtime mapping ✓</span></div><div><b>03</b><span>Treasury + Recon + Period Guard ✓</span></div><div><b>04</b><span>Opening Balance + Controlled Journal →</span></div></div></article>
-          <article className="panel-card access-panel"><div className="panel-heading"><div><span className="panel-label">ACCESS CONTEXT</span><h3>Kewenangan aktif</h3></div></div><div className="permission-list">{access.permissions.map((permission) => <span key={permission}>{permission}</span>)}</div></article>
+          <article className="panel-card next-panel"><div className="panel-heading"><div><span className="panel-label">PHASE 3F ACTIVE</span><h3>Kontrol Keuangan Bulanan</h3></div><span className="panel-pill">Pembuat–Pemeriksa</span></div><p>Aset dibuat sebagai DRAFT dan diaktifkan user berbeda. Penyusutan dihitung otomatis per bulan, lalu pemeriksa berbeda mencatat jurnalnya. Checklist tutup buku memastikan jurnal, bank, dan penyusutan tidak tertinggal.</p><div className="step-list"><div><b>01</b><span>POS + Stok + Pembelian ✓</span></div><div><b>02</b><span>Buku Besar + Kas/Bank ✓</span></div><div><b>03</b><span>Saldo Awal + Jurnal Terkontrol ✓</span></div><div><b>04</b><span>Aset + Penyusutan + Kesiapan Tutup Buku →</span></div></div></article>
+          <article className="panel-card access-panel"><div className="panel-heading"><div><span className="panel-label">HAK AKSES</span><h3>Kewenangan aktif</h3></div></div><div className="permission-list">{access.permissions.map((permission) => <span key={permission}>{permission}</span>)}</div></article>
         </section>
       </div>
     </section>

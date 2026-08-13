@@ -35,6 +35,7 @@ const EMPTY_FEATURES = {
   accountingRuntime: false,
   treasuryPeriod: false,
   controlledJournal: false,
+  assetDepreciation: false,
 };
 
 export function getD1(): D1DatabaseLike {
@@ -69,7 +70,7 @@ export async function getD1SchemaStatus() {
     }
 
     const versions = await db
-      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3','procurement_accounting_v4','accounting_config_v5','accounting_runtime_v6','treasury_period_v7','controlled_journal_v8')")
+      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3','procurement_accounting_v4','accounting_config_v5','accounting_runtime_v6','treasury_period_v7','controlled_journal_v8','asset_depreciation_v9')")
       .all<{ version: string }>();
     const applied = new Set(versions.results.map((row) => row.version));
     const coreReady = applied.has("transaction_core_v1");
@@ -80,36 +81,39 @@ export async function getD1SchemaStatus() {
     const accountingRuntimeReady = applied.has("accounting_runtime_v6");
     const treasuryPeriodReady = applied.has("treasury_period_v7");
     const controlledJournalReady = applied.has("controlled_journal_v8");
+    const assetDepreciationReady = applied.has("asset_depreciation_v9");
 
-    const currentVersion = controlledJournalReady
-      ? "controlled_journal_v8"
-      : treasuryPeriodReady
-        ? "treasury_period_v7"
-        : accountingRuntimeReady
-          ? "accounting_runtime_v6"
-          : accountingConfigReady
-            ? "accounting_config_v5"
-            : procurementAccountingReady
-              ? "procurement_accounting_v4"
-              : procurementReady
-                ? "procurement_v3"
-                : inventoryReady
-                  ? "inventory_control_v2"
-                  : coreReady
-                    ? "transaction_core_v1"
-                    : null;
+    const currentVersion = assetDepreciationReady
+      ? "asset_depreciation_v9"
+      : controlledJournalReady
+        ? "controlled_journal_v8"
+        : treasuryPeriodReady
+          ? "treasury_period_v7"
+          : accountingRuntimeReady
+            ? "accounting_runtime_v6"
+            : accountingConfigReady
+              ? "accounting_config_v5"
+              : procurementAccountingReady
+                ? "procurement_accounting_v4"
+                : procurementReady
+                  ? "procurement_v3"
+                  : inventoryReady
+                    ? "inventory_control_v2"
+                    : coreReady
+                      ? "transaction_core_v1"
+                      : null;
 
     return {
       bound: true,
       initialized: coreReady,
       current:
         coreReady && inventoryReady && procurementReady && procurementAccountingReady &&
-        accountingConfigReady && accountingRuntimeReady && treasuryPeriodReady && controlledJournalReady,
+        accountingConfigReady && accountingRuntimeReady && treasuryPeriodReady && controlledJournalReady && assetDepreciationReady,
       currentVersion,
       pendingUpgrade:
         coreReady &&
         (!inventoryReady || !procurementReady || !procurementAccountingReady || !accountingConfigReady ||
-          !accountingRuntimeReady || !treasuryPeriodReady || !controlledJournalReady),
+          !accountingRuntimeReady || !treasuryPeriodReady || !controlledJournalReady || !assetDepreciationReady),
       features: {
         transactionCore: coreReady,
         inventoryControl: inventoryReady,
@@ -119,6 +123,7 @@ export async function getD1SchemaStatus() {
         accountingRuntime: accountingRuntimeReady,
         treasuryPeriod: treasuryPeriodReady,
         controlledJournal: controlledJournalReady,
+        assetDepreciation: assetDepreciationReady,
       },
     };
   } catch {

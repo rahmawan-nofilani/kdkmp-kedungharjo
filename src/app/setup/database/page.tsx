@@ -23,13 +23,15 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
   const needsV6 = version === "accounting_config_v5";
   const needsV7 = version === "accounting_runtime_v6";
   const needsV8 = version === "treasury_period_v7";
-  const known = ["procurement_v3","procurement_accounting_v4","accounting_config_v5","accounting_runtime_v6","treasury_period_v7","controlled_journal_v8"];
+  const needsV9 = version === "controlled_journal_v8";
+  const known = ["procurement_v3","procurement_accounting_v4","accounting_config_v5","accounting_runtime_v6","treasury_period_v7","controlled_journal_v8","asset_depreciation_v9"];
   const v3Available = known.includes(version);
-  const v4Available = ["procurement_accounting_v4","accounting_config_v5","accounting_runtime_v6","treasury_period_v7","controlled_journal_v8"].includes(version);
-  const v5Available = ["accounting_config_v5","accounting_runtime_v6","treasury_period_v7","controlled_journal_v8"].includes(version);
-  const v6Available = ["accounting_runtime_v6","treasury_period_v7","controlled_journal_v8"].includes(version);
-  const v7Available = ["treasury_period_v7","controlled_journal_v8"].includes(version);
-  const v8Available = version === "controlled_journal_v8";
+  const v4Available = ["procurement_accounting_v4","accounting_config_v5","accounting_runtime_v6","treasury_period_v7","controlled_journal_v8","asset_depreciation_v9"].includes(version);
+  const v5Available = ["accounting_config_v5","accounting_runtime_v6","treasury_period_v7","controlled_journal_v8","asset_depreciation_v9"].includes(version);
+  const v6Available = ["accounting_runtime_v6","treasury_period_v7","controlled_journal_v8","asset_depreciation_v9"].includes(version);
+  const v7Available = ["treasury_period_v7","controlled_journal_v8","asset_depreciation_v9"].includes(version);
+  const v8Available = ["controlled_journal_v8","asset_depreciation_v9"].includes(version);
+  const v9Available = version === "asset_depreciation_v9";
 
   const upgradeLabel = !status.initialized
     ? "Initialize & Upgrade D1"
@@ -40,6 +42,7 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
     : needsV6 ? "Apply Accounting Runtime v6"
     : needsV7 ? "Apply Treasury & Period Control v7"
     : needsV8 ? "Apply Controlled Journal v8"
+    : needsV9 ? "Apply Aset & Penyusutan v9"
     : "Apply Pending D1 Upgrades";
 
   return <main className={styles.page}><section className={styles.card}>
@@ -57,16 +60,17 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
       <div><b>V4</b><span>{v4Available ? "Procurement Accounting v4 tersedia" : "Procurement Accounting v4 menunggu migration"}</span></div>
       <div><b>V5</b><span>{v5Available ? "Configurable COA & Accounting Mapping v5 tersedia" : "Accounting Config v5 menunggu migration"}</span></div>
       <div><b>V6</b><span>{v6Available ? "Runtime Accounting Mapping v6 tersedia" : "Accounting Runtime v6 menunggu migration"}</span></div>
-      <div><b>V7</b><span>{v7Available ? "Treasury + Accounting Period Control v7 tersedia" : "Treasury Period v7 menunggu migration"}</span></div>
-      <div><b>V8</b><span>{v8Available ? "Controlled Journal + Opening Balance v8 tersedia" : "Controlled Journal v8 menunggu migration"}</span></div>
+      <div><b>V7</b><span>{v7Available ? "Kas/Bank + Kontrol Periode v7 tersedia" : "Treasury Period v7 menunggu migration"}</span></div>
+      <div><b>V8</b><span>{v8Available ? "Jurnal Terkontrol + Saldo Awal v8 tersedia" : "Controlled Journal v8 menunggu migration"}</span></div>
+      <div><b>V9</b><span>{v9Available ? "Aset Tetap + Penyusutan v9 tersedia" : "Aset & Penyusutan v9 menunggu migration"}</span></div>
       <div><b>DATA</b><span>Migration bersifat additive dan tidak menghapus transaksi yang sudah ada.</span></div>
     </div>
     {params.status === "updated" ? <div className={styles.alert}>Migration D1 berhasil diterapkan. Schema sekarang sudah pada versi terbaru.</div> : null}
     {params.status === "ready" ? <div className={styles.alert}>D1 sudah berada pada schema terbaru dan siap digunakan.</div> : null}
     {params.error ? <div className={`${styles.alert} ${styles.error}`}><strong>Migration belum berhasil.</strong>{params.stage ? <span> Stage {params.stage}.</span> : null}{params.step ? <span> Gagal pada statement #{params.step}.</span> : null}{params.detail ? <div style={{ marginTop: 8, wordBreak: "break-word" }}>{params.detail}</div> : null}</div> : null}
     <div className={styles.actions}>
-      {!status.current ? <form action={initializeD1}><button type="submit" disabled={!status.bound}>{upgradeLabel}</button></form> : <Link href="/finance/journals">Lanjut ke Controlled Journals</Link>}
-      <Link href="/finance">Finance</Link><Link href="/finance/journals">Journals</Link><Link href="/finance/treasury">Treasury</Link><Link href="/finance/settings">Accounting Settings</Link><Link href="/procurement/ap">AP Control</Link><Link href="/dashboard">Dashboard</Link>
+      {!status.current ? <form action={initializeD1}><button type="submit" disabled={!status.bound}>{upgradeLabel}</button></form> : <Link href="/finance/assets">Lanjut ke Aset Tetap</Link>}
+      <Link href="/finance">Keuangan</Link><Link href="/finance/assets">Aset</Link><Link href="/finance/closing-readiness">Kesiapan Tutup Buku</Link><Link href="/finance/journals">Jurnal</Link><Link href="/finance/treasury">Kas & Bank</Link><Link href="/dashboard">Dashboard</Link>
     </div>
     <p className={styles.note}>Hanya akun dengan ORG_MANAGE yang dapat menjalankan migration. Marker versi baru ditulis setelah seluruh statement selesai sehingga migration aman dijalankan ulang.</p>
   </section></main>;
