@@ -20,11 +20,12 @@ CREATE TABLE IF NOT EXISTS backup_runs (
   verified_by TEXT,
   verified_at TEXT,
   verification_note TEXT,
-  UNIQUE (organization_id, backup_number),
-  UNIQUE (organization_id, checksum_sha256)
+  UNIQUE (organization_id, backup_number)
 );
 CREATE INDEX IF NOT EXISTS backup_runs_org_date_idx
   ON backup_runs (organization_id, generated_at DESC, status);
+CREATE INDEX IF NOT EXISTS backup_runs_org_checksum_idx
+  ON backup_runs (organization_id, checksum_sha256, generated_at DESC);
 
 CREATE TABLE IF NOT EXISTS backup_restore_tests (
   id TEXT PRIMARY KEY,
