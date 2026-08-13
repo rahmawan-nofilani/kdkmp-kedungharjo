@@ -20,9 +20,11 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
   const needsV3 = version === "inventory_control_v2";
   const needsV4 = version === "procurement_v3";
   const needsV5 = version === "procurement_accounting_v4";
-  const v3Available = ["procurement_v3", "procurement_accounting_v4", "accounting_config_v5"].includes(version);
-  const v4Available = ["procurement_accounting_v4", "accounting_config_v5"].includes(version);
-  const v5Available = version === "accounting_config_v5";
+  const needsV6 = version === "accounting_config_v5";
+  const v3Available = ["procurement_v3", "procurement_accounting_v4", "accounting_config_v5", "accounting_runtime_v6"].includes(version);
+  const v4Available = ["procurement_accounting_v4", "accounting_config_v5", "accounting_runtime_v6"].includes(version);
+  const v5Available = ["accounting_config_v5", "accounting_runtime_v6"].includes(version);
+  const v6Available = version === "accounting_runtime_v6";
 
   const upgradeLabel = !status.initialized
     ? "Initialize & Upgrade D1"
@@ -34,7 +36,9 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
           ? "Apply Procurement Accounting v4"
           : needsV5
             ? "Apply Accounting Config v5"
-            : "Apply Pending D1 Upgrades";
+            : needsV6
+              ? "Apply Accounting Runtime v6"
+              : "Apply Pending D1 Upgrades";
 
   return <main className={styles.page}><section className={styles.card}>
     <p className={styles.kicker}>DEVELOPMENT SETUP · D1</p><h1>Transaction Database</h1>
@@ -50,6 +54,7 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
       <div><b>V3</b><span>{v3Available ? "Procurement v3 tersedia" : "Procurement v3 menunggu migration"}</span></div>
       <div><b>V4</b><span>{v4Available ? "Procurement Accounting v4 tersedia" : "Procurement Accounting v4 menunggu migration"}</span></div>
       <div><b>V5</b><span>{v5Available ? "Configurable COA & Accounting Mapping v5 tersedia" : "Accounting Config v5 menunggu migration"}</span></div>
+      <div><b>V6</b><span>{v6Available ? "Runtime Accounting Mapping v6 tersedia" : "Accounting Runtime v6 menunggu migration"}</span></div>
       <div><b>DATA</b><span>Migration bersifat additive dan tidak menghapus transaksi yang sudah ada.</span></div>
     </div>
     {params.status === "updated" ? <div className={styles.alert}>Migration D1 berhasil diterapkan. Schema sekarang sudah pada versi terbaru.</div> : null}
