@@ -21,7 +21,16 @@ export async function initializeD1() {
   let destination = "/setup/database?status=updated";
   try {
     const result = await applyPendingD1Migrations();
-    for (const path of ["/setup/database", "/teller", "/inventory", "/inventory/opname", "/procurement", "/procurement/ap"]) revalidatePath(path);
+    for (const path of [
+      "/setup/database",
+      "/teller",
+      "/inventory",
+      "/inventory/opname",
+      "/procurement",
+      "/procurement/ap",
+      "/finance",
+      "/finance/settings",
+    ]) revalidatePath(path);
     destination = result.alreadyInitialized ? "/setup/database?status=ready" : "/setup/database?status=updated";
   } catch (error) {
     console.error("D1 initialization/upgrade failed", error);
