@@ -57,9 +57,30 @@ CREATE TABLE IF NOT EXISTS stock_opname_lines (
   UNIQUE (session_id, product_id)
 );
 CREATE INDEX IF NOT EXISTS stock_opname_lines_session_idx ON stock_opname_lines (session_id, product_id);
+`;
 
-INSERT OR IGNORE INTO app_schema_versions (version, applied_at)
-VALUES ('inventory_control_v2', datetime('now'));
+const STOCK_OPNAME_STALE_GUARD_SQL = `
+CREATE TRIGGER IF NOT EXISTS stock_opname_stale_guard
+BEFORE INSERT ON inventory_movements
+WHEN NEW.reference_type = 'STOCK_OPNAME'
+BEGIN
+  SELECT CASE
+    WHEN COALESCE((
+      SELECT SUM(quantity_delta)
+      FROM inventory_movements
+      WHERE organization_id = NEW.organization_id
+        AND warehouse_id = NEW.warehouse_id
+        AND product_id = NEW.product_id
+    ), 0) != COALESCE((
+      SELECT system_qty
+      FROM stock_opname_lines
+      WHERE session_id = NEW.reference_id
+        AND product_id = NEW.product_id
+      LIMIT 1
+    ), -999999999)
+    THEN RAISE(ABORT, 'STOCK_OPNAME_STALE_SNAPSHOT')
+  END;
+END;
 `;
 
 function toStatements(sql: string) {
@@ -94,6 +115,20 @@ export async function applyInventoryControlV2() {
       throw new Error(`D1_UPGRADE_V2_STEP_${index + 1}: ${message} | SQL: ${operation}`);
     }
   }
+
+  try {
+    await db.exec(STOCK_OPNAME_STALE_GUARD_SQL);
+    completed += 1;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`D1_UPGRADE_V2_STEP_${statements.length + 1}: ${message} | SQL: CREATE TRIGGER stock_opname_stale_guard`);
+  }
+
+  await db
+    .prepare("INSERT OR IGNORE INTO app_schema_versions (version, applied_at) VALUES (?, datetime('now'))")
+    .bind(INVENTORY_CONTROL_VERSION)
+    .run();
+  completed += 1;
 
   return { alreadyApplied: false, statements: completed };
 }
