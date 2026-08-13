@@ -83,10 +83,10 @@ BEGIN
 END;
 `;
 
-const ACCOUNT_ARCHIVE_GUARD_TRIGGER = `
-CREATE TRIGGER IF NOT EXISTS accounting_account_archive_guard
+const ACCOUNT_STATUS_GUARD_TRIGGER = `
+CREATE TRIGGER IF NOT EXISTS accounting_account_status_guard
 BEFORE UPDATE OF status ON chart_of_accounts
-WHEN NEW.status = 'ARCHIVED'
+WHEN NEW.status <> 'ACTIVE'
  AND EXISTS (
    SELECT 1
    FROM accounting_mapping_versions amv
@@ -127,7 +127,7 @@ export async function applyAccountingConfigV5() {
   const triggers = [
     MAPPING_MAKER_CHECKER_TRIGGER,
     APPROVED_MAPPING_IMMUTABLE_TRIGGER,
-    ACCOUNT_ARCHIVE_GUARD_TRIGGER,
+    ACCOUNT_STATUS_GUARD_TRIGGER,
   ];
   for (let index = 0; index < triggers.length; index += 1) {
     try {
