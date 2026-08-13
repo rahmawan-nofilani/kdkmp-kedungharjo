@@ -12,6 +12,7 @@ import {
 } from "@/lib/d1/accounting";
 import { listAccounts } from "@/lib/d1/accounting-config";
 import { getD1SchemaStatus } from "@/lib/d1/context";
+import { listTreasuryAccounts } from "@/lib/d1/treasury";
 import styles from "./finance.module.css";
 
 export const dynamic = "force-dynamic";
@@ -68,13 +69,15 @@ export default async function FinancePage({ searchParams }: PageProps) {
   const accountingConfigReady = schema.features.accountingConfig;
   const accountingRuntimeReady = schema.features.accountingRuntime;
   const procurementAccountingReady = schema.features.procurementAccounting;
+  const treasuryReady = schema.features.treasuryPeriod;
 
-  const [trialBalance, integrity, journals, ledger, accounts] = await Promise.all([
+  const [trialBalance, integrity, journals, ledger, accounts, treasuryAccounts] = await Promise.all([
     getTrialBalance(access.organization.id, period),
     getAccountingIntegrity(access.organization.id, period),
     listJournalSummaries(access.organization.id, period, 120),
     listLedgerLines(access.organization.id, period, account, 300),
     accountingConfigReady ? listAccounts(access.organization.id) : Promise.resolve([]),
+    treasuryReady ? listTreasuryAccounts(access.organization.id) : Promise.resolve([]),
   ]);
   const accountNames = new Map(accounts.map((item) => [item.code, item.name]));
   const accountName = (code: string) => accountNames.get(code) || foundationAccountName(code);
@@ -82,6 +85,8 @@ export default async function FinancePage({ searchParams }: PageProps) {
   const totalTrialDebit = trialBalance.reduce((sum, row) => sum + row.debit_amount, 0);
   const totalTrialCredit = trialBalance.reduce((sum, row) => sum + row.credit_amount, 0);
   const canConfigure = access.permissions.includes("ACCOUNTING_MANAGE") || access.permissions.includes("ACCOUNTING_APPROVE");
+  const treasuryCash = treasuryReady ? treasuryAccounts.filter((row) => row.status === "ACTIVE" && row.account_type === "CASH").reduce((sum, row) => sum + row.balance_amount, 0) : model.cash;
+  const treasuryBank = treasuryReady ? treasuryAccounts.filter((row) => row.status === "ACTIVE" && row.account_type === "BANK").reduce((sum, row) => sum + row.balance_amount, 0) : model.bank;
 
   return (
     <main className={styles.page}>
@@ -91,6 +96,7 @@ export default async function FinancePage({ searchParams }: PageProps) {
           <h1>General Ledger & Financial Read Model</h1>
         </div>
         <nav>
+          {treasuryReady ? <Link href="/finance/treasury">Treasury</Link> : null}
           {accountingConfigReady && canConfigure ? <Link href="/finance/settings">Accounting Settings</Link> : null}
           <Link href="/procurement/ap">AP</Link>
           <Link href="/reports/daily-sales">Sales Report</Link>
@@ -101,16 +107,16 @@ export default async function FinancePage({ searchParams }: PageProps) {
       <div className={styles.content}>
         <section className={styles.hero}>
           <div>
-            <span className={styles.kicker}>PHASE 3C · RUNTIME ACCOUNTING</span>
-            <h2>Setiap transaksi dapat ditelusuri ke debit, kredit, dan versi mapping yang membentuk jurnalnya.</h2>
+            <span className={styles.kicker}>PHASE 3D · TREASURY & PERIOD CONTROL</span>
+            <h2>Jurnal tidak hanya seimbang—arus Kas/Bank dan periode posting sekarang mempunyai kontrol operasional sendiri.</h2>
             <p>
-              General Ledger membaca account code snapshot yang sudah POSTED. Mapping APPROVED digunakan untuk jurnal transaksi baru ketika runtime v6 aktif; perubahan mapping tidak menulis ulang sejarah jurnal.
+              General Ledger membaca account code snapshot yang sudah POSTED. Runtime mapping tetap versioned; v7 menambahkan treasury register, bank reconciliation, serta OPEN/CLOSED/LOCKED period guard di D1.
             </p>
           </div>
           <div className={styles.roleCard}>
             <span>Schema aktif</span>
             <strong>{schema.currentVersion || "—"}</strong>
-            <small>{accountingRuntimeReady ? "Runtime mapping aktif" : accountingConfigReady ? "Configurable COA aktif · runtime upgrade menunggu" : procurementAccountingReady ? "Accounting read model tersedia" : "Ada migration lanjutan yang perlu dicek"}</small>
+            <small>{treasuryReady ? "Treasury + period guard aktif" : accountingRuntimeReady ? "Runtime mapping aktif · treasury upgrade menunggu" : accountingConfigReady ? "Configurable COA aktif" : procurementAccountingReady ? "Accounting read model tersedia" : "Ada migration lanjutan yang perlu dicek"}</small>
           </div>
         </section>
 
@@ -126,7 +132,12 @@ export default async function FinancePage({ searchParams }: PageProps) {
         ) : null}
         {accountingConfigReady && !accountingRuntimeReady ? (
           <div className={styles.warning}>
-            COA/mapping v5 tersedia, tetapi runtime mapping v6 belum aktif. Procurement akan meminta migration sebelum receiving/AP baru diproses. <Link href="/setup/database">Apply accounting_runtime_v6 →</Link>
+            COA/mapping v5 tersedia, tetapi runtime mapping v6 belum aktif. <Link href="/setup/database">Apply accounting_runtime_v6 →</Link>
+          </div>
+        ) : null}
+        {accountingRuntimeReady && !treasuryReady ? (
+          <div className={styles.warning}>
+            Runtime accounting aktif, tetapi Treasury & Period Control v7 belum diterapkan. <Link href="/setup/database">Apply treasury_period_v7 →</Link>
           </div>
         ) : null}
 
@@ -144,7 +155,7 @@ export default async function FinancePage({ searchParams }: PageProps) {
         <section className={styles.metrics}>
           <article><span>Journal Entries</span><strong>{integrity.entryCount}</strong><small>{integrity.lineCount} journal lines</small></article>
           <article className={integrity.passed ? styles.goodMetric : styles.alertMetric}><span>Journal Integrity</span><strong>{integrity.passed ? "PASS" : "CHECK"}</strong><small>{integrity.exceptions.length} exception</small></article>
-          <article><span>Kas + Bank</span><strong>{rupiah(model.cash + model.bank)}</strong><small>Kas {rupiah(model.cash)} · Bank {rupiah(model.bank)}</small></article>
+          <article><span>Kas + Bank</span><strong>{rupiah(treasuryCash + treasuryBank)}</strong><small>Kas {rupiah(treasuryCash)} · Bank {rupiah(treasuryBank)}</small></article>
           <article><span>Net Income</span><strong>{rupiah(model.netIncome)}</strong><small>Revenue − Expenses</small></article>
         </section>
 
@@ -167,7 +178,7 @@ export default async function FinancePage({ searchParams }: PageProps) {
               <div><span>Laba berjalan</span><strong>{rupiah(model.netIncome)}</strong></div>
               <div className={styles.statementTotal}><span>Equation gap</span><strong>{rupiah(model.equationGap)}</strong></div>
             </div>
-            <p className={styles.note}>Gap tidak disembunyikan. Opening equity/manual journal tetap belum dibuka pada Phase 3C.</p>
+            <p className={styles.note}>Gap tidak disembunyikan. Opening balance/equity dan controlled manual journal tetap menjadi tahap berikutnya.</p>
           </article>
         </section>
 
@@ -213,7 +224,7 @@ export default async function FinancePage({ searchParams }: PageProps) {
 
         <section className={styles.foundationNote}>
           <strong>Accounting control notice</strong>
-          <p>{accountingRuntimeReady ? "COA dan mapping event sudah configurable, versioned, approval-controlled, dan dipakai oleh runtime posting baru. Jurnal historis tetap memakai account code yang diposting saat transaksi terjadi." : accountingConfigReady ? "COA dan mapping v5 tersedia, tetapi runtime v6 belum aktif." : "Nama akun masih memakai foundation mapping."} Manual journal dan period closing belum dibuka.</p>
+          <p>{treasuryReady ? "Treasury register, bank reconciliation, dan database period guard sudah tersedia. " : accountingRuntimeReady ? "Runtime accounting mapping aktif. " : "Accounting foundation masih membutuhkan upgrade. "}Jurnal historis tetap memakai account code yang diposting saat transaksi terjadi. Opening balance dan controlled manual journal belum dibuka.</p>
         </section>
       </div>
     </main>
