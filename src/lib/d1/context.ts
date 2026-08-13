@@ -1,22 +1,32 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
-type D1PreparedRunResult<T = Record<string, unknown>> = {
+export type D1PreparedRunResult<T = Record<string, unknown>> = {
   success: boolean;
   results?: T[];
   meta?: Record<string, unknown>;
 };
 
-type D1PreparedLike = {
+export type D1PreparedAllResult<T = Record<string, unknown>> = {
+  success: boolean;
+  results: T[];
+  meta?: Record<string, unknown>;
+};
+
+export type D1PreparedLike = {
+  bind(...values: unknown[]): D1PreparedLike;
   first<T = Record<string, unknown>>(): Promise<T | null>;
+  all<T = Record<string, unknown>>(): Promise<D1PreparedAllResult<T>>;
   run<T = Record<string, unknown>>(): Promise<D1PreparedRunResult<T>>;
 };
 
 type NativeD1DatabaseLike = {
   prepare(query: string): D1PreparedLike;
+  batch<T = Record<string, unknown>>(statements: D1PreparedLike[]): Promise<D1PreparedRunResult<T>[]>;
 };
 
 export type D1DatabaseLike = {
   prepare(query: string): D1PreparedLike;
+  batch<T = Record<string, unknown>>(statements: D1PreparedLike[]): Promise<D1PreparedRunResult<T>[]>;
   exec(query: string): Promise<{ count: number; duration: number }>;
 };
 
@@ -34,11 +44,13 @@ export function getD1(): D1DatabaseLike {
     prepare(query: string) {
       return nativeDb.prepare(query);
     },
+    batch<T = Record<string, unknown>>(statements: D1PreparedLike[]) {
+      return nativeDb.batch<T>(statements);
+    },
     async exec(query: string) {
-      // Native D1 exec treats newlines as query separators. Our bootstrap sends
-      // one complete SQL statement at a time, and CREATE TABLE statements are
-      // intentionally formatted across multiple lines. PreparedStatement.run()
-      // executes that multiline statement as one unit.
+      // Bootstrap sends one complete SQL statement at a time. Prepared run keeps
+      // multiline CREATE TABLE statements intact, unlike native D1 exec which
+      // treats newlines as query separators.
       const result = await nativeDb.prepare(query).run();
       const rawDuration = result.meta?.duration;
       const duration = typeof rawDuration === "number" ? rawDuration : 0;
