@@ -26,6 +26,15 @@ export type D1DatabaseLike = {
   exec(query: string): Promise<{ count: number; duration: number }>;
 };
 
+const EMPTY_FEATURES = {
+  transactionCore: false,
+  inventoryControl: false,
+  procurement: false,
+  procurementAccounting: false,
+  accountingConfig: false,
+  accountingRuntime: false,
+};
+
 export function getD1(): D1DatabaseLike {
   const context = getCloudflareContext();
   const env = context.env as unknown as { DB?: NativeD1DatabaseLike };
@@ -46,7 +55,16 @@ export async function getD1SchemaStatus() {
   try {
     const db = getD1();
     const markerTable = await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='app_schema_versions' LIMIT 1").first<{ name: string }>();
-    if (!markerTable?.name) return { bound: true, initialized: false, current: false, currentVersion: null as string | null, pendingUpgrade: false };
+    if (!markerTable?.name) {
+      return {
+        bound: true,
+        initialized: false,
+        current: false,
+        currentVersion: null as string | null,
+        pendingUpgrade: false,
+        features: { ...EMPTY_FEATURES },
+      };
+    }
 
     const versions = await db
       .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3','procurement_accounting_v4','accounting_config_v5','accounting_runtime_v6')")
@@ -79,8 +97,23 @@ export async function getD1SchemaStatus() {
       current: coreReady && inventoryReady && procurementReady && procurementAccountingReady && accountingConfigReady && accountingRuntimeReady,
       currentVersion,
       pendingUpgrade: coreReady && (!inventoryReady || !procurementReady || !procurementAccountingReady || !accountingConfigReady || !accountingRuntimeReady),
+      features: {
+        transactionCore: coreReady,
+        inventoryControl: inventoryReady,
+        procurement: procurementReady,
+        procurementAccounting: procurementAccountingReady,
+        accountingConfig: accountingConfigReady,
+        accountingRuntime: accountingRuntimeReady,
+      },
     };
   } catch {
-    return { bound: false, initialized: false, current: false, currentVersion: null as string | null, pendingUpgrade: false };
+    return {
+      bound: false,
+      initialized: false,
+      current: false,
+      currentVersion: null as string | null,
+      pendingUpgrade: false,
+      features: { ...EMPTY_FEATURES },
+    };
   }
 }
