@@ -1,6 +1,7 @@
 import { initializeTransactionCore } from "./bootstrap";
 import { getD1 } from "./context";
-import { applyProcurementV3, PROCUREMENT_VERSION } from "./procurement-schema";
+import { applyProcurementV3 } from "./procurement-schema";
+import { applyProcurementAccountingV4, PROCUREMENT_ACCOUNTING_VERSION } from "./procurement-accounting-schema";
 
 export const INVENTORY_CONTROL_VERSION = "inventory_control_v2";
 
@@ -99,7 +100,6 @@ export async function applyInventoryControlV2() {
 
   const statements = toStatements(INVENTORY_CONTROL_SQL);
   let completed = 0;
-
   for (let index = 0; index < statements.length; index += 1) {
     const statement = statements[index];
     try {
@@ -125,7 +125,6 @@ export async function applyInventoryControlV2() {
     .bind(INVENTORY_CONTROL_VERSION)
     .run();
   completed += 1;
-
   return { alreadyApplied: false, statements: completed };
 }
 
@@ -133,11 +132,13 @@ export async function applyPendingD1Migrations() {
   const core = await initializeTransactionCore();
   const inventory = await applyInventoryControlV2();
   const procurement = await applyProcurementV3();
+  const procurementAccounting = await applyProcurementAccountingV4();
 
   return {
     initialized: true,
-    alreadyInitialized: core.alreadyInitialized && inventory.alreadyApplied && procurement.alreadyApplied,
-    statements: core.statements + inventory.statements + procurement.statements,
-    currentVersion: PROCUREMENT_VERSION,
+    alreadyInitialized:
+      core.alreadyInitialized && inventory.alreadyApplied && procurement.alreadyApplied && procurementAccounting.alreadyApplied,
+    statements: core.statements + inventory.statements + procurement.statements + procurementAccounting.statements,
+    currentVersion: PROCUREMENT_ACCOUNTING_VERSION,
   };
 }
