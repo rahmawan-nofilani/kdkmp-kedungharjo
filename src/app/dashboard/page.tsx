@@ -23,9 +23,9 @@ const navigation: Array<{ section: string; items: NavItem[] }> = [
   {
     section: "Operasional",
     items: [
-      { label: "POS / Teller", href: "/teller", permission: "POS_ACCESS", badge: "Phase 1" },
+      { label: "POS / Teller", href: "/teller", permission: "POS_ACCESS", badge: "Live" },
       { label: "Anggota", href: "/members", permission: "MEMBER_VIEW", badge: "Live" },
-      { label: "Inventory", href: "/dashboard", permission: "INVENTORY_VIEW", badge: "Soon" },
+      { label: "Inventory", href: "/inventory", permission: "INVENTORY_VIEW", badge: "Live" },
     ],
   },
   {
@@ -105,7 +105,7 @@ export default async function DashboardPage() {
             <span className="status-dot" />
             <div>
               <strong>Development online</strong>
-              <span>Cloudflare + Supabase Auth</span>
+              <span>Cloudflare + Supabase + D1</span>
             </div>
           </div>
         </header>
@@ -113,10 +113,10 @@ export default async function DashboardPage() {
         <div className="workspace-content">
           <section className="welcome-panel">
             <div>
-              <p className="eyebrow dashboard-eyebrow">PHASE 1 · MEMBER + TELLER FOUNDATION</p>
-              <h2>Master anggota sudah aktif dan workspace Teller PC mulai tersedia.</h2>
+              <p className="eyebrow dashboard-eyebrow">PHASE 1.1 · INVENTORY + CASH CONTROL</p>
+              <h2>D1 aktif. Product master, inventory ledger, dan cash shift Teller mulai tersedia.</h2>
               <p>
-                Data anggota sekarang dilindungi RLS dan permission. Transaksi uang masih ditahan sampai D1 transaction engine, inventory ledger, cash drawer, dan accounting posting siap.
+                Data anggota tetap dilindungi Supabase RLS, sedangkan produk, movement stok, shift teller, pembayaran, jurnal, audit transaksi, dan idempotency berada di D1. POS penjualan masih digate sampai atomic commit selesai.
               </p>
             </div>
             <div className="role-chip">
@@ -152,19 +152,19 @@ export default async function DashboardPage() {
             <article className="panel-card next-panel">
               <div className="panel-heading">
                 <div>
-                  <span className="panel-label">PHASE 1 ACTIVE</span>
-                  <h3>Workspace Teller PC</h3>
+                  <span className="panel-label">PHASE 1.1 ACTIVE</span>
+                  <h3>Transaction Foundation</h3>
                 </div>
-                <span className="panel-pill">Member Ready</span>
+                <span className="panel-pill">D1 Ready</span>
               </div>
               <p>
-                Member master dan pencarian teller sudah dapat diuji. Tahap berikutnya adalah D1, product master, inventory ledger, lalu cash drawer.
+                Gunakan Inventory untuk membuat gudang, produk, dan opening stock. Setelah inventory siap, buka shift dari Teller. POS baru dibuka pada fase atomic transaction berikutnya.
               </p>
               <div className="step-list">
                 <div><b>01</b><span>Member master & pencarian cepat ✓</span></div>
-                <div><b>02</b><span>D1 transaction engine</span></div>
-                <div><b>03</b><span>Product & inventory foundation</span></div>
-                <div><b>04</b><span>Teller shift & POS pipeline</span></div>
+                <div><b>02</b><span>D1 transaction core ✓</span></div>
+                <div><b>03</b><span>Product & inventory foundation ✓</span></div>
+                <div><b>04</b><span>Teller shift & cash control ✓</span></div>
               </div>
             </article>
 
@@ -189,7 +189,7 @@ export default async function DashboardPage() {
         <Link className="active" href="/dashboard"><span>⌂</span>Beranda</Link>
         <Link href="/teller"><span>▣</span>Teller</Link>
         <Link href="/members"><span>◎</span>Anggota</Link>
-        <Link href="/dashboard"><span>▤</span>Laporan</Link>
+        <Link href="/inventory"><span>▤</span>Stok</Link>
         <Link href="/dashboard"><span>•••</span>Lainnya</Link>
       </nav>
     </main>
