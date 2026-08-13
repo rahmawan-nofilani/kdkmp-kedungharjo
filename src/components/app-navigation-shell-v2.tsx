@@ -115,7 +115,6 @@ export function AppNavigationShellV2({ access, children }: { access: ShellAccess
   if (noShell.has(pathname)) return <>{children}</>;
 
   return <div className={`app-shell ${navigationPending ? "shell-is-navigating" : ""}`}>
-    <div className="shell-route-progress" aria-hidden={!navigationPending}><span /></div>
     <aside className="desktop-sidebar">
       <Link href="/dashboard" prefetch className="sidebar-brand persistent-brand" aria-label="Buka Dashboard" onPointerEnter={() => warmRoute("/dashboard")} onFocus={() => warmRoute("/dashboard")} onClick={() => beginNavigation("/dashboard")}>
         <div className="brand-mark compact">KD</div><div><strong>KDKMP</strong><span>Kedungharjo</span></div>
