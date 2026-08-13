@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getAccessContext } from "@/lib/access/context";
 import { getD1SchemaStatus } from "@/lib/d1/context";
-import { createProduct, ensureDefaultWarehouse, postOpeningStock } from "@/lib/d1/inventory";
+import {
+  createProduct,
+  ensureDefaultWarehouse,
+  postInventoryAdjustment,
+  postOpeningStock,
+} from "@/lib/d1/inventory";
 
 function text(formData: FormData, key: string, max = 120) {
   return String(formData.get(key) ?? "").trim().slice(0, max);
@@ -34,14 +39,20 @@ async function requireInventoryManager() {
   return access;
 }
 
+function revalidateInventoryWorkspaces() {
+  revalidatePath("/inventory");
+  revalidatePath("/teller");
+  revalidatePath("/pos");
+  revalidatePath("/closing");
+}
+
 export async function createDefaultWarehouseAction() {
   const access = await requireInventoryManager();
   await ensureDefaultWarehouse({
     organizationId: access.organization.id,
     unitId: access.units[0]?.id ?? null,
   });
-  revalidatePath("/inventory");
-  revalidatePath("/teller");
+  revalidateInventoryWorkspaces();
   redirect("/inventory?status=warehouse-ready");
 }
 
@@ -76,11 +87,10 @@ export async function createProductAction(formData: FormData) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal membuat produk.";
-    destination = `/inventory?error=${encodeURIComponent(message.slice(0, 160))}`;
+    destination = `/inventory?error=${encodeURIComponent(message.slice(0, 180))}`;
   }
 
-  revalidatePath("/inventory");
-  revalidatePath("/teller");
+  revalidateInventoryWorkspaces();
   redirect(destination);
 }
 
@@ -110,10 +120,45 @@ export async function postOpeningStockAction(formData: FormData) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal posting stok awal.";
-    destination = `/inventory?error=${encodeURIComponent(message.slice(0, 160))}`;
+    destination = `/inventory?error=${encodeURIComponent(message.slice(0, 180))}`;
   }
 
-  revalidatePath("/inventory");
-  revalidatePath("/teller");
+  revalidateInventoryWorkspaces();
+  redirect(destination);
+}
+
+export async function postStockAdjustmentAction(formData: FormData) {
+  const access = await requireInventoryManager();
+  let destination = "/inventory?status=stock-adjusted";
+
+  try {
+    const warehouseId = text(formData, "warehouseId", 80);
+    const productId = text(formData, "productId", 80);
+    const direction = text(formData, "direction", 8).toUpperCase();
+    const quantity = positiveInt(formData, "quantity");
+    const reason = text(formData, "reason", 200);
+    const batchCode = text(formData, "batchCode", 80);
+    const expiryDate = text(formData, "expiryDate", 20);
+
+    if (!warehouseId || !productId) throw new Error("Gudang dan produk wajib dipilih.");
+    if (direction !== "IN" && direction !== "OUT") throw new Error("Arah adjustment tidak valid.");
+
+    await postInventoryAdjustment({
+      organizationId: access.organization.id,
+      actorUserId: access.user.id,
+      warehouseId,
+      productId,
+      direction,
+      quantity,
+      reason,
+      batchCode: batchCode || null,
+      expiryDate: expiryDate || null,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gagal melakukan adjustment stok.";
+    destination = `/inventory?error=${encodeURIComponent(message.slice(0, 180))}`;
+  }
+
+  revalidateInventoryWorkspaces();
   redirect(destination);
 }
