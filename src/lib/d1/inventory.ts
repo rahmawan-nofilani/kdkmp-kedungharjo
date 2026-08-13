@@ -21,6 +21,25 @@ export type WarehouseRow = {
   status: string;
 };
 
+export type InventoryMovementRow = {
+  id: string;
+  warehouse_id: string;
+  warehouse_code: string;
+  warehouse_name: string;
+  product_id: string;
+  sku: string;
+  product_name: string;
+  movement_type: string;
+  quantity_delta: number;
+  unit_cost_amount: number;
+  batch_code: string | null;
+  expiry_date: string | null;
+  reference_type: string | null;
+  reference_id: string | null;
+  actor_user_id: string | null;
+  occurred_at: string;
+};
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -96,6 +115,45 @@ export async function listProductsWithStock(organizationId: string) {
     track_stock: Number(row.track_stock),
     track_expiry: Number(row.track_expiry),
     stock_qty: Number(row.stock_qty),
+  }));
+}
+
+export async function listRecentInventoryMovements(organizationId: string, limit = 80) {
+  const db = getD1();
+  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 200);
+  const result = await db
+    .prepare(`
+      SELECT
+        im.id,
+        im.warehouse_id,
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        im.product_id,
+        p.sku,
+        p.name AS product_name,
+        im.movement_type,
+        im.quantity_delta,
+        im.unit_cost_amount,
+        im.batch_code,
+        im.expiry_date,
+        im.reference_type,
+        im.reference_id,
+        im.actor_user_id,
+        im.occurred_at
+      FROM inventory_movements im
+      JOIN warehouses w ON w.id = im.warehouse_id
+      JOIN products p ON p.id = im.product_id
+      WHERE im.organization_id = ?
+      ORDER BY im.occurred_at DESC, im.created_at DESC
+      LIMIT ${safeLimit}
+    `)
+    .bind(organizationId)
+    .all<InventoryMovementRow>();
+
+  return result.results.map((row) => ({
+    ...row,
+    quantity_delta: Number(row.quantity_delta),
+    unit_cost_amount: Number(row.unit_cost_amount),
   }));
 }
 
@@ -181,6 +239,20 @@ export async function postOpeningStock(input: {
     .first<{ id: string }>();
   if (!warehouse) throw new Error("Gudang tidak ditemukan atau tidak aktif.");
 
+  const existingMovement = await db
+    .prepare(
+      "SELECT id FROM inventory_movements WHERE organization_id = ? AND warehouse_id = ? AND product_id = ? LIMIT 1",
+    )
+    .bind(input.organizationId, input.warehouseId, input.productId)
+    .first<{ id: string }>();
+  if (existingMovement) {
+    throw new Error("Opening stock hanya boleh dipakai sebelum ada pergerakan stok. Gunakan Adjustment untuk koreksi berikutnya.");
+  }
+
+  if (Number(product.track_expiry) && !input.expiryDate) {
+    throw new Error("Tanggal kedaluwarsa wajib untuk produk yang memakai expiry tracking.");
+  }
+
   const movementId = crypto.randomUUID();
   const auditId = crypto.randomUUID();
   const now = nowIso();
@@ -225,4 +297,108 @@ export async function postOpeningStock(input: {
 
   await db.batch([movement, audit]);
   return movementId;
+}
+
+export async function postInventoryAdjustment(input: {
+  organizationId: string;
+  actorUserId: string;
+  warehouseId: string;
+  productId: string;
+  direction: "IN" | "OUT";
+  quantity: number;
+  reason: string;
+  batchCode?: string | null;
+  expiryDate?: string | null;
+}) {
+  const db = getD1();
+  const reason = input.reason.trim();
+  if (reason.length < 8 || reason.length > 200) {
+    throw new Error("Alasan adjustment wajib 8–200 karakter.");
+  }
+  if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) {
+    throw new Error("Qty adjustment harus lebih dari 0.");
+  }
+
+  const product = await db
+    .prepare(
+      "SELECT id, cost_amount, track_stock, track_expiry FROM products WHERE id = ? AND organization_id = ? AND status = 'ACTIVE' LIMIT 1",
+    )
+    .bind(input.productId, input.organizationId)
+    .first<{ id: string; cost_amount: number; track_stock: number; track_expiry: number }>();
+  if (!product) throw new Error("Produk tidak ditemukan atau tidak aktif.");
+  if (!Number(product.track_stock)) throw new Error("Produk ini tidak memakai pelacakan stok.");
+
+  const warehouse = await db
+    .prepare(
+      "SELECT id FROM warehouses WHERE id = ? AND organization_id = ? AND status = 'ACTIVE' LIMIT 1",
+    )
+    .bind(input.warehouseId, input.organizationId)
+    .first<{ id: string }>();
+  if (!warehouse) throw new Error("Gudang tidak ditemukan atau tidak aktif.");
+
+  const balanceRow = await db
+    .prepare(
+      "SELECT COALESCE(SUM(quantity_delta),0) AS balance FROM inventory_movements WHERE organization_id = ? AND warehouse_id = ? AND product_id = ?",
+    )
+    .bind(input.organizationId, input.warehouseId, input.productId)
+    .first<{ balance: number }>();
+  const balanceBefore = Number(balanceRow?.balance ?? 0);
+  if (input.direction === "OUT" && input.quantity > balanceBefore) {
+    throw new Error(`Stok tidak cukup. Saldo saat ini ${balanceBefore}.`);
+  }
+
+  if (Number(product.track_expiry) && input.direction === "IN" && !input.expiryDate) {
+    throw new Error("Tanggal kedaluwarsa wajib untuk adjustment masuk produk expiry-tracked.");
+  }
+
+  const quantityDelta = input.direction === "IN" ? input.quantity : -input.quantity;
+  const balanceAfter = balanceBefore + quantityDelta;
+  const movementType = input.direction === "IN" ? "ADJUSTMENT_IN" : "ADJUSTMENT_OUT";
+  const movementId = crypto.randomUUID();
+  const auditId = crypto.randomUUID();
+  const now = nowIso();
+
+  const movement = db
+    .prepare(
+      "INSERT INTO inventory_movements (id, organization_id, warehouse_id, product_id, movement_type, quantity_delta, unit_cost_amount, batch_code, expiry_date, reference_type, reference_id, actor_user_id, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'STOCK_ADJUSTMENT', ?, ?, ?, ?)",
+    )
+    .bind(
+      movementId,
+      input.organizationId,
+      input.warehouseId,
+      input.productId,
+      movementType,
+      quantityDelta,
+      Number(product.cost_amount),
+      input.batchCode || null,
+      Number(product.track_expiry) && input.direction === "IN" ? input.expiryDate || null : null,
+      movementId,
+      input.actorUserId,
+      now,
+      now,
+    );
+
+  const audit = db
+    .prepare(
+      "INSERT INTO transaction_audit_events (id, organization_id, actor_user_id, event_type, entity_type, entity_id, payload_json, created_at) VALUES (?, ?, ?, 'INVENTORY_ADJUSTED', 'INVENTORY_MOVEMENT', ?, ?, ?)",
+    )
+    .bind(
+      auditId,
+      input.organizationId,
+      input.actorUserId,
+      movementId,
+      JSON.stringify({
+        productId: input.productId,
+        warehouseId: input.warehouseId,
+        direction: input.direction,
+        quantity: input.quantity,
+        reason,
+        balanceBefore,
+        balanceAfter,
+      }),
+      now,
+    );
+
+  await db.batch([movement, audit]);
+  return { movementId, balanceBefore, balanceAfter };
 }
