@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { AppNavigationShell } from "@/components/app-navigation-shell";
+import { getAccessContext } from "@/lib/access/context";
 import "./globals.css";
 import "./navigation-links.css";
 
@@ -7,10 +9,25 @@ export const metadata: Metadata = {
   description: "Platform operasional Koperasi Desa Merah Putih Kedungharjo.",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const access = await getAccessContext();
+
   return (
     <html lang="id">
-      <body>{children}</body>
+      <body>
+        {access ? (
+          <AppNavigationShell
+            access={{
+              profile: { fullName: access.profile.fullName },
+              organization: { name: access.organization.name },
+              role: { name: access.role.name },
+              permissions: access.permissions,
+            }}
+          >
+            {children}
+          </AppNavigationShell>
+        ) : children}
+      </body>
     </html>
   );
 }
