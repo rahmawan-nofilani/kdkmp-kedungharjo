@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { memo, useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { commitCashSaleAction, initialCashSaleState } from "./actions";
+import { commitCashSaleAction, type CashSaleActionState } from "./actions";
 import styles from "./pos.module.css";
 
 type Product = {
@@ -28,6 +28,8 @@ type CartLine = {
   product: Product;
   quantity: number;
 };
+
+const initialCashSaleState: CashSaleActionState = { status: "idle" };
 
 function rupiah(value: number) {
   return new Intl.NumberFormat("id-ID", {
