@@ -31,6 +31,7 @@ export async function initializeD1() {
       "/finance",
       "/finance/settings",
       "/finance/treasury",
+      "/finance/journals",
     ]) revalidatePath(path);
     destination = result.alreadyInitialized ? "/setup/database?status=ready" : "/setup/database?status=updated";
   } catch (error) {
