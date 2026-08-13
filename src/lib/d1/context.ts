@@ -33,6 +33,7 @@ const EMPTY_FEATURES = {
   procurementAccounting: false,
   accountingConfig: false,
   accountingRuntime: false,
+  treasuryPeriod: false,
 };
 
 export function getD1(): D1DatabaseLike {
@@ -67,7 +68,7 @@ export async function getD1SchemaStatus() {
     }
 
     const versions = await db
-      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3','procurement_accounting_v4','accounting_config_v5','accounting_runtime_v6')")
+      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3','procurement_accounting_v4','accounting_config_v5','accounting_runtime_v6','treasury_period_v7')")
       .all<{ version: string }>();
     const applied = new Set(versions.results.map((row) => row.version));
     const coreReady = applied.has("transaction_core_v1");
@@ -76,27 +77,44 @@ export async function getD1SchemaStatus() {
     const procurementAccountingReady = applied.has("procurement_accounting_v4");
     const accountingConfigReady = applied.has("accounting_config_v5");
     const accountingRuntimeReady = applied.has("accounting_runtime_v6");
+    const treasuryPeriodReady = applied.has("treasury_period_v7");
 
-    const currentVersion = accountingRuntimeReady
-      ? "accounting_runtime_v6"
-      : accountingConfigReady
-        ? "accounting_config_v5"
-        : procurementAccountingReady
-          ? "procurement_accounting_v4"
-          : procurementReady
-            ? "procurement_v3"
-            : inventoryReady
-              ? "inventory_control_v2"
-              : coreReady
-                ? "transaction_core_v1"
-                : null;
+    const currentVersion = treasuryPeriodReady
+      ? "treasury_period_v7"
+      : accountingRuntimeReady
+        ? "accounting_runtime_v6"
+        : accountingConfigReady
+          ? "accounting_config_v5"
+          : procurementAccountingReady
+            ? "procurement_accounting_v4"
+            : procurementReady
+              ? "procurement_v3"
+              : inventoryReady
+                ? "inventory_control_v2"
+                : coreReady
+                  ? "transaction_core_v1"
+                  : null;
 
     return {
       bound: true,
       initialized: coreReady,
-      current: coreReady && inventoryReady && procurementReady && procurementAccountingReady && accountingConfigReady && accountingRuntimeReady,
+      current:
+        coreReady &&
+        inventoryReady &&
+        procurementReady &&
+        procurementAccountingReady &&
+        accountingConfigReady &&
+        accountingRuntimeReady &&
+        treasuryPeriodReady,
       currentVersion,
-      pendingUpgrade: coreReady && (!inventoryReady || !procurementReady || !procurementAccountingReady || !accountingConfigReady || !accountingRuntimeReady),
+      pendingUpgrade:
+        coreReady &&
+        (!inventoryReady ||
+          !procurementReady ||
+          !procurementAccountingReady ||
+          !accountingConfigReady ||
+          !accountingRuntimeReady ||
+          !treasuryPeriodReady),
       features: {
         transactionCore: coreReady,
         inventoryControl: inventoryReady,
@@ -104,6 +122,7 @@ export async function getD1SchemaStatus() {
         procurementAccounting: procurementAccountingReady,
         accountingConfig: accountingConfigReady,
         accountingRuntime: accountingRuntimeReady,
+        treasuryPeriod: treasuryPeriodReady,
       },
     };
   } catch {
