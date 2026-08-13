@@ -49,7 +49,7 @@ export async function getD1SchemaStatus() {
     if (!markerTable?.name) return { bound: true, initialized: false, current: false, currentVersion: null as string | null, pendingUpgrade: false };
 
     const versions = await db
-      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3','procurement_accounting_v4','accounting_config_v5')")
+      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3','procurement_accounting_v4','accounting_config_v5','accounting_runtime_v6')")
       .all<{ version: string }>();
     const applied = new Set(versions.results.map((row) => row.version));
     const coreReady = applied.has("transaction_core_v1");
@@ -57,25 +57,28 @@ export async function getD1SchemaStatus() {
     const procurementReady = applied.has("procurement_v3");
     const procurementAccountingReady = applied.has("procurement_accounting_v4");
     const accountingConfigReady = applied.has("accounting_config_v5");
+    const accountingRuntimeReady = applied.has("accounting_runtime_v6");
 
-    const currentVersion = accountingConfigReady
-      ? "accounting_config_v5"
-      : procurementAccountingReady
-        ? "procurement_accounting_v4"
-        : procurementReady
-          ? "procurement_v3"
-          : inventoryReady
-            ? "inventory_control_v2"
-            : coreReady
-              ? "transaction_core_v1"
-              : null;
+    const currentVersion = accountingRuntimeReady
+      ? "accounting_runtime_v6"
+      : accountingConfigReady
+        ? "accounting_config_v5"
+        : procurementAccountingReady
+          ? "procurement_accounting_v4"
+          : procurementReady
+            ? "procurement_v3"
+            : inventoryReady
+              ? "inventory_control_v2"
+              : coreReady
+                ? "transaction_core_v1"
+                : null;
 
     return {
       bound: true,
       initialized: coreReady,
-      current: coreReady && inventoryReady && procurementReady && procurementAccountingReady && accountingConfigReady,
+      current: coreReady && inventoryReady && procurementReady && procurementAccountingReady && accountingConfigReady && accountingRuntimeReady,
       currentVersion,
-      pendingUpgrade: coreReady && (!inventoryReady || !procurementReady || !procurementAccountingReady || !accountingConfigReady),
+      pendingUpgrade: coreReady && (!inventoryReady || !procurementReady || !procurementAccountingReady || !accountingConfigReady || !accountingRuntimeReady),
     };
   } catch {
     return { bound: false, initialized: false, current: false, currentVersion: null as string | null, pendingUpgrade: false };
