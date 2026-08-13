@@ -23,7 +23,8 @@ const navigation: Array<{ section: string; items: NavItem[] }> = [
   {
     section: "Operasional",
     items: [
-      { label: "POS / Teller", href: "/teller", permission: "POS_ACCESS", badge: "Live" },
+      { label: "POS", href: "/pos", permission: "POS_ACCESS", badge: "Demo" },
+      { label: "Teller / Shift", href: "/teller", permission: "POS_ACCESS", badge: "Live" },
       { label: "Anggota", href: "/members", permission: "MEMBER_VIEW", badge: "Live" },
       { label: "Inventory", href: "/inventory", permission: "INVENTORY_VIEW", badge: "Live" },
     ],
@@ -113,10 +114,10 @@ export default async function DashboardPage() {
         <div className="workspace-content">
           <section className="welcome-panel">
             <div>
-              <p className="eyebrow dashboard-eyebrow">PHASE 1.1 · INVENTORY + CASH CONTROL</p>
-              <h2>D1 aktif. Product master, inventory ledger, dan cash shift Teller mulai tersedia.</h2>
+              <p className="eyebrow dashboard-eyebrow">PHASE 1.2 · ATOMIC POS DEVELOPMENT</p>
+              <h2>POS tunai development sudah tersedia di atas fondasi D1, inventory ledger, cash shift, jurnal, dan audit.</h2>
               <p>
-                Data anggota tetap dilindungi Supabase RLS, sedangkan produk, movement stok, shift teller, pembayaran, jurnal, audit transaksi, dan idempotency berada di D1. POS penjualan masih digate sampai atomic commit selesai.
+                Data anggota tetap dilindungi Supabase RLS. Penjualan tunai sekarang diposting ke D1 sebagai satu batch: sale, detail barang, inventory movement, payment, jurnal, audit, dan idempotency. Gunakan data DEMO sampai pengujian transaksi selesai.
               </p>
             </div>
             <div className="role-chip">
@@ -152,19 +153,19 @@ export default async function DashboardPage() {
             <article className="panel-card next-panel">
               <div className="panel-heading">
                 <div>
-                  <span className="panel-label">PHASE 1.1 ACTIVE</span>
-                  <h3>Transaction Foundation</h3>
+                  <span className="panel-label">PHASE 1.2 ACTIVE</span>
+                  <h3>Atomic Retail Transaction</h3>
                 </div>
-                <span className="panel-pill">D1 Ready</span>
+                <span className="panel-pill">POS Demo</span>
               </div>
               <p>
-                Gunakan Inventory untuk membuat gudang, produk, dan opening stock. Setelah inventory siap, buka shift dari Teller. POS baru dibuka pada fase atomic transaction berikutnya.
+                Buka Inventory untuk stok, Teller untuk membuka shift, lalu POS untuk transaksi tunai DEMO. QRIS dan transaksi uang nyata tetap belum dibuka sampai integrasi pembayaran dan rekonsiliasi selesai.
               </p>
               <div className="step-list">
                 <div><b>01</b><span>Member master & pencarian cepat ✓</span></div>
                 <div><b>02</b><span>D1 transaction core ✓</span></div>
-                <div><b>03</b><span>Product & inventory foundation ✓</span></div>
-                <div><b>04</b><span>Teller shift & cash control ✓</span></div>
+                <div><b>03</b><span>Product, inventory & cash shift ✓</span></div>
+                <div><b>04</b><span>Atomic cash POS + journal ✓</span></div>
               </div>
             </article>
 
@@ -187,10 +188,10 @@ export default async function DashboardPage() {
 
       <nav className="mobile-bottom-nav" aria-label="Navigasi mobile">
         <Link className="active" href="/dashboard"><span>⌂</span>Beranda</Link>
-        <Link href="/teller"><span>▣</span>Teller</Link>
+        <Link href="/pos"><span>▣</span>POS</Link>
+        <Link href="/teller"><span>◫</span>Teller</Link>
         <Link href="/members"><span>◎</span>Anggota</Link>
         <Link href="/inventory"><span>▤</span>Stok</Link>
-        <Link href="/dashboard"><span>•••</span>Lainnya</Link>
       </nav>
     </main>
   );
