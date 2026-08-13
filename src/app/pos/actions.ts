@@ -82,7 +82,8 @@ export async function commitCashSaleAction(formData: FormData) {
     revalidatePath("/pos");
     revalidatePath("/inventory");
     revalidatePath("/teller");
-    destination = `/pos?status=success&receipt=${encodeURIComponent(result.receiptNumber)}&total=${result.totalAmount}${result.duplicate ? "&duplicate=1" : ""}`;
+    revalidatePath("/reports/daily-sales");
+    destination = `/pos?status=success&sale=${encodeURIComponent(result.saleId)}&receipt=${encodeURIComponent(result.receiptNumber)}&total=${result.totalAmount}${result.duplicate ? "&duplicate=1" : ""}`;
   } catch (error) {
     destination = `/pos?error=${encodeURIComponent(safeMessage(error))}`;
   }
