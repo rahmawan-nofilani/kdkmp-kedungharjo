@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getAccessContext } from "@/lib/access/context";
 import {
-  approveSupplierInvoice,
   createSupplierInvoice,
-  paySupplierInvoice,
   runThreeWayMatch,
 } from "@/lib/d1/procurement-ap";
+import {
+  approveSupplierInvoiceWithMapping,
+  paySupplierInvoiceWithMapping,
+} from "@/lib/d1/procurement-ap-runtime";
 
 async function requirePermission(permission: string) {
   const access = await getAccessContext();
@@ -69,12 +71,13 @@ export async function approveSupplierInvoiceAction(formData: FormData) {
   const access = await requirePermission("INVOICE_APPROVE");
   let destination = "/procurement/ap?status=invoice-approved";
   try {
-    await approveSupplierInvoice({
+    await approveSupplierInvoiceWithMapping({
       organizationId: access.organization.id,
       actorUserId: access.user.id,
       invoiceId: String(formData.get("invoiceId") || ""),
     });
     revalidatePath("/procurement/ap");
+    revalidatePath("/finance");
   } catch (error) {
     destination = errorDestination(error);
   }
@@ -87,7 +90,7 @@ export async function paySupplierInvoiceAction(formData: FormData) {
   try {
     const amount = Math.trunc(Number(String(formData.get("amount") || "0")));
     const method = String(formData.get("method") || "BANK_TRANSFER") === "CASH" ? "CASH" : "BANK_TRANSFER";
-    await paySupplierInvoice({
+    await paySupplierInvoiceWithMapping({
       organizationId: access.organization.id,
       actorUserId: access.user.id,
       invoiceId: String(formData.get("invoiceId") || ""),
@@ -96,6 +99,7 @@ export async function paySupplierInvoiceAction(formData: FormData) {
       referenceNumber: String(formData.get("referenceNumber") || "") || null,
     });
     revalidatePath("/procurement/ap");
+    revalidatePath("/finance");
     revalidatePath("/dashboard");
   } catch (error) {
     destination = errorDestination(error);

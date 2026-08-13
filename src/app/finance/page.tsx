@@ -65,8 +65,9 @@ export default async function FinancePage({ searchParams }: PageProps) {
     period = accountingPeriod(monthStart(today), today);
   }
   const account = params.account?.trim() || null;
-  const accountingConfigReady = schema.currentVersion === "accounting_config_v5";
-  const procurementAccountingReady = ["procurement_accounting_v4", "accounting_config_v5"].includes(schema.currentVersion || "");
+  const accountingConfigReady = schema.features.accountingConfig;
+  const accountingRuntimeReady = schema.features.accountingRuntime;
+  const procurementAccountingReady = schema.features.procurementAccounting;
 
   const [trialBalance, integrity, journals, ledger, accounts] = await Promise.all([
     getTrialBalance(access.organization.id, period),
@@ -100,16 +101,16 @@ export default async function FinancePage({ searchParams }: PageProps) {
       <div className={styles.content}>
         <section className={styles.hero}>
           <div>
-            <span className={styles.kicker}>PHASE 3B · ACCOUNTING CONTROL</span>
-            <h2>Setiap transaksi dapat ditelusuri ke debit, kredit, dan konfigurasi akun yang membentuk jurnalnya.</h2>
+            <span className={styles.kicker}>PHASE 3C · RUNTIME ACCOUNTING</span>
+            <h2>Setiap transaksi dapat ditelusuri ke debit, kredit, dan versi mapping yang membentuk jurnalnya.</h2>
             <p>
-              General Ledger tetap membaca journal code snapshot yang sudah POSTED. Jika v5 aktif, nama akun berasal dari COA organisasi yang versioned; perubahan mapping baru tidak menulis ulang sejarah jurnal.
+              General Ledger membaca account code snapshot yang sudah POSTED. Mapping APPROVED digunakan untuk jurnal transaksi baru ketika runtime v6 aktif; perubahan mapping tidak menulis ulang sejarah jurnal.
             </p>
           </div>
           <div className={styles.roleCard}>
             <span>Schema aktif</span>
             <strong>{schema.currentVersion || "—"}</strong>
-            <small>{accountingConfigReady ? "Configurable COA + mapping tersedia" : procurementAccountingReady ? "Accounting read model tersedia" : "Ada migration lanjutan yang perlu dicek"}</small>
+            <small>{accountingRuntimeReady ? "Runtime mapping aktif" : accountingConfigReady ? "Configurable COA aktif · runtime upgrade menunggu" : procurementAccountingReady ? "Accounting read model tersedia" : "Ada migration lanjutan yang perlu dicek"}</small>
           </div>
         </section>
 
@@ -121,6 +122,11 @@ export default async function FinancePage({ searchParams }: PageProps) {
         {procurementAccountingReady && !accountingConfigReady ? (
           <div className={styles.warning}>
             Accounting read model aktif, tetapi configurable COA/mapping v5 belum diterapkan. <Link href="/setup/database">Apply accounting_config_v5 →</Link>
+          </div>
+        ) : null}
+        {accountingConfigReady && !accountingRuntimeReady ? (
+          <div className={styles.warning}>
+            COA/mapping v5 tersedia, tetapi runtime mapping v6 belum aktif. Procurement akan meminta migration sebelum receiving/AP baru diproses. <Link href="/setup/database">Apply accounting_runtime_v6 →</Link>
           </div>
         ) : null}
 
@@ -161,7 +167,7 @@ export default async function FinancePage({ searchParams }: PageProps) {
               <div><span>Laba berjalan</span><strong>{rupiah(model.netIncome)}</strong></div>
               <div className={styles.statementTotal}><span>Equation gap</span><strong>{rupiah(model.equationGap)}</strong></div>
             </div>
-            <p className={styles.note}>Gap tidak disembunyikan. Opening equity/manual journal tetap belum dibuka pada Phase 3B.</p>
+            <p className={styles.note}>Gap tidak disembunyikan. Opening equity/manual journal tetap belum dibuka pada Phase 3C.</p>
           </article>
         </section>
 
@@ -207,7 +213,7 @@ export default async function FinancePage({ searchParams }: PageProps) {
 
         <section className={styles.foundationNote}>
           <strong>Accounting control notice</strong>
-          <p>{accountingConfigReady ? "COA dan mapping event sudah configurable, versioned, dan approval-controlled. Jurnal historis tetap memakai account code yang diposting saat transaksi terjadi." : "Nama akun masih memakai foundation mapping sampai accounting_config_v5 diterapkan."} Manual journal dan period closing belum dibuka.</p>
+          <p>{accountingRuntimeReady ? "COA dan mapping event sudah configurable, versioned, approval-controlled, dan dipakai oleh runtime posting baru. Jurnal historis tetap memakai account code yang diposting saat transaksi terjadi." : accountingConfigReady ? "COA dan mapping v5 tersedia, tetapi runtime v6 belum aktif." : "Nama akun masih memakai foundation mapping."} Manual journal dan period closing belum dibuka.</p>
         </section>
       </div>
     </main>

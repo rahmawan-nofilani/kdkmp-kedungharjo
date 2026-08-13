@@ -21,7 +21,7 @@ export default async function AccountingSettingsPage({ searchParams }: PageProps
   if (!access) redirect("/login");
   if (!access.permissions.includes("FINANCE_VIEW")) redirect("/dashboard");
   const schema = await getD1SchemaStatus();
-  if (schema.currentVersion !== "accounting_config_v5") redirect("/setup/database");
+  if (!schema.features.accountingConfig) redirect("/setup/database");
 
   const params = await searchParams;
   const [accounts, mappings] = await Promise.all([
