@@ -176,6 +176,30 @@ CREATE TABLE IF NOT EXISTS supplier_payments (
 CREATE INDEX IF NOT EXISTS supplier_payments_invoice_idx ON supplier_payments (supplier_invoice_id, paid_at DESC);
 `;
 
+const OVER_RECEIPT_GUARD_SQL = `
+CREATE TRIGGER IF NOT EXISTS goods_receipt_over_receive_guard
+BEFORE INSERT ON goods_receipt_items
+BEGIN
+  SELECT CASE
+    WHEN (
+      COALESCE((
+        SELECT SUM(gri.quantity_received)
+        FROM goods_receipt_items gri
+        JOIN goods_receipts gr ON gr.id = gri.goods_receipt_id
+        WHERE gri.purchase_order_item_id = NEW.purchase_order_item_id
+          AND gr.status = 'POSTED'
+      ), 0) + NEW.quantity_received
+    ) > COALESCE((
+      SELECT quantity_ordered
+      FROM purchase_order_items
+      WHERE id = NEW.purchase_order_item_id
+      LIMIT 1
+    ), 0)
+    THEN RAISE(ABORT, 'PROCUREMENT_OVER_RECEIPT')
+  END;
+END;
+`;
+
 function toStatements(sql: string) {
   return sql.split(";").map((statement) => statement.trim()).filter(Boolean);
 }
@@ -201,6 +225,14 @@ export async function applyProcurementV3() {
       const operation = statement.replace(/\s+/g, " ").slice(0, 110);
       throw new Error(`D1_UPGRADE_V3_STEP_${index + 1}: ${message} | SQL: ${operation}`);
     }
+  }
+
+  try {
+    await db.exec(OVER_RECEIPT_GUARD_SQL);
+    completed += 1;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`D1_UPGRADE_V3_STEP_${statements.length + 1}: ${message} | SQL: CREATE TRIGGER goods_receipt_over_receive_guard`);
   }
 
   await db
