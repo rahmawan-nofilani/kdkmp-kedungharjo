@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogoutButton } from "@/components/logout-button";
@@ -54,9 +55,10 @@ function allowed(item: NavItem, permissions: Set<string>) {
   return true;
 }
 
-function BackButton({ mobile = false }: { mobile?: boolean }) {
+function BackButton({ mobile = false, onStart }: { mobile?: boolean; onStart: () => void }) {
   const router = useRouter();
   function back() {
+    onStart();
     if (typeof window !== "undefined" && window.history.length > 1) router.back();
     else router.push("/dashboard");
   }
@@ -67,30 +69,76 @@ function BackButton({ mobile = false }: { mobile?: boolean }) {
 
 export function AppNavigationShellV2({ access, children }: { access: ShellAccess; children: ReactNode }) {
   const pathname = usePathname();
-  if (noShell.has(pathname)) return <>{children}</>;
+  const router = useRouter();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const [navigationPending, setNavigationPending] = useState(false);
 
-  const permissions = new Set(access.permissions);
-  const visibleGroups = groups
+  const permissions = useMemo(() => new Set(access.permissions), [access.permissions]);
+  const visibleGroups = useMemo(() => groups
     .map((group) => ({ ...group, items: group.items.filter((item) => allowed(item, permissions)) }))
-    .filter((group) => group.items.length);
+    .filter((group) => group.items.length), [permissions]);
+
   const activeHref = visibleGroups
     .flatMap((group) => group.items)
     .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
     .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  const displayedActiveHref = pendingHref || activeHref;
   const firstName = access.profile.fullName.trim().split(/\s+/)[0] || "U";
 
-  return <div className="app-shell">
+  useEffect(() => {
+    setPendingHref(null);
+    setNavigationPending(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!navigationPending) return;
+    const timeout = window.setTimeout(() => {
+      setPendingHref(null);
+      setNavigationPending(false);
+    }, 8000);
+    return () => window.clearTimeout(timeout);
+  }, [navigationPending]);
+
+  function warmRoute(href: string) {
+    if (href !== pathname) router.prefetch(href);
+  }
+
+  function beginNavigation(href?: string) {
+    if (href && href === pathname) return;
+    if (href) {
+      setPendingHref(href);
+      router.prefetch(href);
+    }
+    setNavigationPending(true);
+  }
+
+  if (noShell.has(pathname)) return <>{children}</>;
+
+  return <div className={`app-shell ${navigationPending ? "shell-is-navigating" : ""}`}>
+    <div className="shell-route-progress" aria-hidden={!navigationPending}><span /></div>
     <aside className="desktop-sidebar">
-      <Link href="/dashboard" className="sidebar-brand persistent-brand" aria-label="Buka Dashboard">
+      <Link href="/dashboard" prefetch className="sidebar-brand persistent-brand" aria-label="Buka Dashboard" onPointerEnter={() => warmRoute("/dashboard")} onFocus={() => warmRoute("/dashboard")} onClick={() => beginNavigation("/dashboard")}>
         <div className="brand-mark compact">KD</div><div><strong>KDKMP</strong><span>Kedungharjo</span></div>
       </Link>
-      <div className="persistent-back"><BackButton /></div>
+      <div className="persistent-back"><BackButton onStart={() => beginNavigation()} /></div>
       <nav className="sidebar-nav" aria-label="Navigasi utama">
         {visibleGroups.map((group) => <section className="nav-group" key={group.section}>
           <p>{group.section}</p>
-          {group.items.map((item) => <Link href={item.href} className={`nav-item ${activeHref === item.href ? "active" : ""}`} key={`${group.section}-${item.label}`}>
-            <span>{item.label}</span>{item.badge ? <small>{item.badge}</small> : null}
-          </Link>)}
+          {group.items.map((item) => {
+            const isPending = pendingHref === item.href;
+            return <Link
+              href={item.href}
+              prefetch
+              className={`nav-item ${displayedActiveHref === item.href ? "active" : ""} ${isPending ? "pending" : ""}`}
+              key={`${group.section}-${item.label}`}
+              onPointerEnter={() => warmRoute(item.href)}
+              onFocus={() => warmRoute(item.href)}
+              onClick={() => beginNavigation(item.href)}
+            >
+              <span>{item.label}</span>
+              {isPending ? <small className="nav-route-state">Membuka…</small> : item.badge ? <small>{item.badge}</small> : null}
+            </Link>;
+          })}
         </section>)}
       </nav>
       <div className="sidebar-profile">
@@ -103,11 +151,11 @@ export function AppNavigationShellV2({ access, children }: { access: ShellAccess
     <div className="persistent-content">{children}</div>
 
     <nav className="mobile-bottom-nav" aria-label="Navigasi mobile">
-      <BackButton mobile />
-      <Link className={pathname === "/dashboard" ? "active" : ""} href="/dashboard"><span>⌂</span>Beranda</Link>
-      {permissions.has("POS_ACCESS") ? <Link className={pathname.startsWith("/pos") ? "active" : ""} href="/pos"><span>▣</span>Kasir</Link> : <Link href="/dashboard"><span>⌂</span>Beranda</Link>}
-      {permissions.has("INVENTORY_VIEW") ? <Link className={pathname.startsWith("/inventory") ? "active" : ""} href="/inventory"><span>▤</span>Stok</Link> : <Link href="/dashboard"><span>⌂</span>Beranda</Link>}
-      {permissions.has("FINANCE_VIEW") ? <Link className={pathname.startsWith("/finance") ? "active" : ""} href="/finance"><span>Rp</span>Keuangan</Link> : <Link href="/dashboard"><span>⌂</span>Beranda</Link>}
+      <BackButton mobile onStart={() => beginNavigation()} />
+      <Link className={(pendingHref === "/dashboard" || (!pendingHref && pathname === "/dashboard")) ? "active" : ""} href="/dashboard" prefetch onClick={() => beginNavigation("/dashboard")} onTouchStart={() => warmRoute("/dashboard")}><span>⌂</span>Beranda</Link>
+      {permissions.has("POS_ACCESS") ? <Link className={(pendingHref === "/pos" || (!pendingHref && pathname.startsWith("/pos"))) ? "active" : ""} href="/pos" prefetch onClick={() => beginNavigation("/pos")} onTouchStart={() => warmRoute("/pos")}><span>▣</span>Kasir</Link> : <Link href="/dashboard"><span>⌂</span>Beranda</Link>}
+      {permissions.has("INVENTORY_VIEW") ? <Link className={(pendingHref === "/inventory" || (!pendingHref && pathname.startsWith("/inventory"))) ? "active" : ""} href="/inventory" prefetch onClick={() => beginNavigation("/inventory")} onTouchStart={() => warmRoute("/inventory")}><span>▤</span>Stok</Link> : <Link href="/dashboard"><span>⌂</span>Beranda</Link>}
+      {permissions.has("FINANCE_VIEW") ? <Link className={(pendingHref === "/finance" || (!pendingHref && pathname.startsWith("/finance"))) ? "active" : ""} href="/finance" prefetch onClick={() => beginNavigation("/finance")} onTouchStart={() => warmRoute("/finance")}><span>Rp</span>Keuangan</Link> : <Link href="/dashboard"><span>⌂</span>Beranda</Link>}
     </nav>
   </div>;
 }
