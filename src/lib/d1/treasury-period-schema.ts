@@ -152,7 +152,7 @@ WHEN NEW.status = 'POSTED'
  AND EXISTS (
    SELECT 1 FROM accounting_periods ap
    WHERE ap.organization_id = NEW.organization_id
-     AND date(NEW.posted_at, '+7 hours') BETWEEN ap.period_start AND ap.period_end
+     AND date(COALESCE(NEW.posted_at, NEW.created_at), '+7 hours') BETWEEN ap.period_start AND ap.period_end
      AND ap.status IN ('CLOSED','LOCKED')
  )
 BEGIN
@@ -167,7 +167,7 @@ WHEN NEW.status = 'POSTED'
  AND EXISTS (
    SELECT 1 FROM accounting_periods ap
    WHERE ap.organization_id = NEW.organization_id
-     AND date(NEW.posted_at, '+7 hours') BETWEEN ap.period_start AND ap.period_end
+     AND date(COALESCE(NEW.posted_at, NEW.created_at), '+7 hours') BETWEEN ap.period_start AND ap.period_end
      AND ap.status IN ('CLOSED','LOCKED')
  )
 BEGIN
