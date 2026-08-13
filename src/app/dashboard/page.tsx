@@ -34,6 +34,7 @@ const navigation: Array<{ section: string; items: NavItem[] }> = [
     section: "Kontrol",
     items: [
       { label: "Keuangan", href: "/finance", permission: "FINANCE_VIEW", badge: "Live" },
+      { label: "Kas & Bank", href: "/finance/treasury", permission: "FINANCE_VIEW", badge: "New" },
       { label: "Approval", href: "/procurement", permission: "PURCHASE_APPROVE", badge: "PR" },
       { label: "Laporan", href: "/reports/daily-sales", permission: "REPORT_VIEW", badge: "Live" },
     ],
@@ -88,9 +89,9 @@ export default async function DashboardPage() {
         <div className="workspace-content">
           <section className="welcome-panel">
             <div>
-              <p className="eyebrow dashboard-eyebrow">PHASE 3A · ACCOUNTING READ MODEL</p>
-              <h2>Retail, inventory, procurement, dan AP sekarang ditarik ke satu kontrol General Ledger dan laporan keuangan.</h2>
-              <p>POS, closing, stock opname, supplier, PR, PO, receiving, invoice, 3-Way Match, AP, dan jurnal sudah memiliki jalur data yang dapat diaudit. Gunakan data DEMO sampai configurable COA, finance controls, security hardening, dan UAT selesai.</p>
+              <p className="eyebrow dashboard-eyebrow">PHASE 3D · TREASURY & PERIOD CONTROL</p>
+              <h2>Retail core sekarang terhubung ke General Ledger, Kas/Bank, rekonsiliasi, dan kontrol periode akuntansi.</h2>
+              <p>POS, inventory, procurement/AP, configurable accounting mapping, treasury, dan period guard memakai audit trail yang sama. Gunakan data DEMO sampai opening balance, controlled journal, security hardening, dan UAT selesai.</p>
             </div>
             <div className="role-chip"><span>Role aktif</span><strong>{access.role.name}</strong></div>
           </section>
@@ -104,13 +105,13 @@ export default async function DashboardPage() {
 
           <section className="dashboard-grid">
             <article className="panel-card next-panel">
-              <div className="panel-heading"><div><span className="panel-label">PHASE 3A ACTIVE</span><h3>Accounting Read Model</h3></div><span className="panel-pill">Controlled</span></div>
-              <p>General Ledger membaca jurnal POSTED dari transaksi yang sudah dibangun. Trial Balance, Laba-Rugi, Neraca, cash/bank, AP, GRNI, dan journal integrity ditampilkan tanpa mengubah jurnal sumber.</p>
+              <div className="panel-heading"><div><span className="panel-label">PHASE 3D ACTIVE</span><h3>Finance Control Chain</h3></div><span className="panel-pill">Controlled</span></div>
+              <p>Transaksi operasional membentuk journal ledger; Treasury mengontrol arus Kas/Bank; rekonsiliasi mempertemukan journal bank dengan rekening koran; period guard mencegah posting setelah closing.</p>
               <div className="step-list">
-                <div><b>01</b><span>Atomic POS + closing ✓</span></div>
-                <div><b>02</b><span>Inventory + stock opname ✓</span></div>
-                <div><b>03</b><span>Procurement + Invoice/AP ✓</span></div>
-                <div><b>04</b><span>General Ledger + Trial Balance →</span></div>
+                <div><b>01</b><span>Atomic POS + Inventory + Closing ✓</span></div>
+                <div><b>02</b><span>Procurement + Invoice/AP ✓</span></div>
+                <div><b>03</b><span>Configurable COA + runtime mapping ✓</span></div>
+                <div><b>04</b><span>Treasury + Bank Recon + Period Lock →</span></div>
               </div>
             </article>
 
