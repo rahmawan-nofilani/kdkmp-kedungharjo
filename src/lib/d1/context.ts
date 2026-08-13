@@ -48,9 +48,6 @@ export function getD1(): D1DatabaseLike {
       return nativeDb.batch<T>(statements);
     },
     async exec(query: string) {
-      // Bootstrap sends one complete SQL statement at a time. Prepared run keeps
-      // multiline CREATE TABLE statements intact, unlike native D1 exec which
-      // treats newlines as query separators.
       const result = await nativeDb.prepare(query).run();
       const rawDuration = result.meta?.duration;
       const duration = typeof rawDuration === "number" ? rawDuration : 0;
@@ -67,21 +64,36 @@ export async function getD1SchemaStatus() {
       .first<{ name: string }>();
 
     if (!markerTable?.name) {
-      return { bound: true, initialized: false };
+      return {
+        bound: true,
+        initialized: false,
+        current: false,
+        currentVersion: null as string | null,
+        pendingUpgrade: false,
+      };
     }
 
-    const marker = await db
-      .prepare("SELECT version FROM app_schema_versions WHERE version='transaction_core_v1' LIMIT 1")
-      .first<{ version: string }>();
+    const versions = await db
+      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2')")
+      .all<{ version: string }>();
+    const applied = new Set(versions.results.map((row) => row.version));
+    const coreReady = applied.has("transaction_core_v1");
+    const inventoryReady = applied.has("inventory_control_v2");
 
     return {
       bound: true,
-      initialized: Boolean(marker?.version),
+      initialized: coreReady,
+      current: coreReady && inventoryReady,
+      currentVersion: inventoryReady ? "inventory_control_v2" : coreReady ? "transaction_core_v1" : null,
+      pendingUpgrade: coreReady && !inventoryReady,
     };
   } catch {
     return {
       bound: false,
       initialized: false,
+      current: false,
+      currentVersion: null as string | null,
+      pendingUpgrade: false,
     };
   }
 }
