@@ -7,18 +7,27 @@ import { applyPendingD1Migrations } from "@/lib/d1/schema-upgrades";
 
 function diagnosticParams(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  const match = message.match(/^D1_(BOOTSTRAP_STEP|UPGRADE_V2_STEP)_(\d+):\s*([\s\S]*)$/);
-
-  if (!match) {
-    return new URLSearchParams({ error: "database", detail: message.slice(0, 220) });
+  const bootstrap = message.match(/^D1_BOOTSTRAP_STEP_(\d+):\s*([\s\S]*)$/);
+  if (bootstrap) {
+    return new URLSearchParams({
+      error: "database",
+      stage: "CORE",
+      step: bootstrap[1],
+      detail: bootstrap[2].slice(0, 220),
+    });
   }
 
-  return new URLSearchParams({
-    error: "database",
-    stage: match[1] === "BOOTSTRAP_STEP" ? "CORE" : "INVENTORY_V2",
-    step: match[2],
-    detail: match[3].slice(0, 220),
-  });
+  const upgrade = message.match(/^D1_UPGRADE_V(\d+)_STEP_(\d+):\s*([\s\S]*)$/);
+  if (upgrade) {
+    return new URLSearchParams({
+      error: "database",
+      stage: `V${upgrade[1]}`,
+      step: upgrade[2],
+      detail: upgrade[3].slice(0, 220),
+    });
+  }
+
+  return new URLSearchParams({ error: "database", detail: message.slice(0, 220) });
 }
 
 export async function initializeD1() {
@@ -34,6 +43,7 @@ export async function initializeD1() {
     revalidatePath("/teller");
     revalidatePath("/inventory");
     revalidatePath("/inventory/opname");
+    revalidatePath("/procurement");
     destination = result.alreadyInitialized
       ? "/setup/database?status=ready"
       : "/setup/database?status=updated";

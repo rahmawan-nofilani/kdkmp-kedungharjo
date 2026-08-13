@@ -34,10 +34,7 @@ export function getD1(): D1DatabaseLike {
   const context = getCloudflareContext();
   const env = context.env as unknown as { DB?: NativeD1DatabaseLike };
 
-  if (!env.DB) {
-    throw new Error("D1 binding DB is not available");
-  }
-
+  if (!env.DB) throw new Error("D1 binding DB is not available");
   const nativeDb = env.DB;
 
   return {
@@ -74,18 +71,27 @@ export async function getD1SchemaStatus() {
     }
 
     const versions = await db
-      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2')")
+      .prepare("SELECT version FROM app_schema_versions WHERE version IN ('transaction_core_v1','inventory_control_v2','procurement_v3')")
       .all<{ version: string }>();
     const applied = new Set(versions.results.map((row) => row.version));
     const coreReady = applied.has("transaction_core_v1");
     const inventoryReady = applied.has("inventory_control_v2");
+    const procurementReady = applied.has("procurement_v3");
+
+    const currentVersion = procurementReady
+      ? "procurement_v3"
+      : inventoryReady
+        ? "inventory_control_v2"
+        : coreReady
+          ? "transaction_core_v1"
+          : null;
 
     return {
       bound: true,
       initialized: coreReady,
-      current: coreReady && inventoryReady,
-      currentVersion: inventoryReady ? "inventory_control_v2" : coreReady ? "transaction_core_v1" : null,
-      pendingUpgrade: coreReady && !inventoryReady,
+      current: coreReady && inventoryReady && procurementReady,
+      currentVersion,
+      pendingUpgrade: coreReady && (!inventoryReady || !procurementReady),
     };
   } catch {
     return {

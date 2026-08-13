@@ -24,6 +24,8 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
 
   const params = await searchParams;
   const status = await getD1SchemaStatus();
+  const needsV2 = status.currentVersion === "transaction_core_v1";
+  const needsV3 = status.currentVersion === "inventory_control_v2";
 
   return (
     <main className={styles.page}>
@@ -31,7 +33,7 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
         <p className={styles.kicker}>DEVELOPMENT SETUP · D1</p>
         <h1>Transaction Database</h1>
         <p className={styles.lead}>
-          D1 memakai migration marker bertahap. Data transaksi tidak di-reset ketika modul baru ditambahkan; Manager cukup menjalankan pending migration dari halaman ini setelah deployment baru aktif.
+          D1 memakai migration marker bertahap. Data transaksi tidak di-reset ketika modul baru ditambahkan; Manager cukup menjalankan pending migration setelah deployment baru aktif.
         </p>
 
         <div className={styles.statusGrid}>
@@ -50,7 +52,8 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
         <div className={styles.steps}>
           <div><b>VERSION</b><span>{status.currentVersion || "Belum ada schema marker"}</span></div>
           <div><b>CORE</b><span>{status.initialized ? "Transaction Core v1 tersedia" : "Transaction Core belum tersedia"}</span></div>
-          <div><b>V2</b><span>{status.current ? "Inventory Control v2 tersedia" : "Inventory Control v2 menunggu migration"}</span></div>
+          <div><b>V2</b><span>{needsV2 ? "Inventory Control v2 menunggu migration" : "Inventory Control v2 tersedia"}</span></div>
+          <div><b>V3</b><span>{status.current ? "Procurement v3 tersedia" : "Procurement v3 menunggu migration"}</span></div>
           <div><b>DATA</b><span>Migration bersifat additive dan tidak menghapus transaksi yang sudah ada.</span></div>
         </div>
 
@@ -69,18 +72,25 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
           {!status.current ? (
             <form action={initializeD1}>
               <button type="submit" disabled={!status.bound}>
-                {status.initialized ? "Apply Inventory Control v2 Upgrade" : "Initialize & Upgrade D1"}
+                {!status.initialized
+                  ? "Initialize & Upgrade D1"
+                  : needsV2
+                    ? "Apply Pending D1 Upgrades"
+                    : needsV3
+                      ? "Apply Procurement v3 Upgrade"
+                      : "Apply Pending D1 Upgrades"}
               </button>
             </form>
           ) : (
-            <Link href="/inventory/opname">Lanjut ke Stock Opname</Link>
+            <Link href="/procurement">Lanjut ke Procurement</Link>
           )}
+          <Link href="/inventory/opname">Stock Opname</Link>
           <Link href="/inventory">Inventory</Link>
           <Link href="/dashboard">Dashboard</Link>
         </div>
 
         <p className={styles.note}>
-          Hanya akun dengan ORG_MANAGE yang dapat menjalankan migration. Marker versi baru baru ditulis setelah statement migration selesai, sehingga kegagalan dapat dilacak dan migration aman dijalankan ulang.
+          Hanya akun dengan ORG_MANAGE yang dapat menjalankan migration. Marker versi baru ditulis setelah seluruh statement migration selesai, sehingga kegagalan dapat dilacak dan migration aman dijalankan ulang.
         </p>
       </section>
     </main>
