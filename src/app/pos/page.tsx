@@ -19,6 +19,7 @@ type PageProps = {
   searchParams: Promise<{
     status?: string;
     error?: string;
+    sale?: string;
     receipt?: string;
     total?: string;
     duplicate?: string;
@@ -83,6 +84,7 @@ export default async function PosPage({ searchParams }: PageProps) {
           <strong>{rupiah(shift.opening_cash_amount)} kas awal</strong>
         </div>
         <nav className={styles.topNav}>
+          <Link href="/reports/daily-sales">Laporan</Link>
           <Link href="/teller">Teller</Link>
           <Link href="/inventory">Inventory</Link>
           <Link href="/dashboard">Dashboard</Link>
@@ -94,7 +96,13 @@ export default async function PosPage({ searchParams }: PageProps) {
           <div className={styles.successBanner}>
             <div>
               <span>{params.duplicate ? "TRANSAKSI DUPLIKAT DICEGAH" : "TRANSAKSI BERHASIL"}</span>
-              <strong>{params.receipt || "Receipt tersimpan"}</strong>
+              {params.sale ? (
+                <Link className={styles.receiptLink} href={`/sales/${params.sale}`}>
+                  {params.receipt || "Buka struk transaksi"}
+                </Link>
+              ) : (
+                <strong>{params.receipt || "Receipt tersimpan"}</strong>
+              )}
             </div>
             <strong>{rupiah(successTotal)}</strong>
           </div>
@@ -128,16 +136,16 @@ export default async function PosPage({ searchParams }: PageProps) {
               <span className={styles.kicker}>AUDIT CEPAT</span>
               <h2>Transaksi terakhir teller ini</h2>
             </div>
-            <Link href="/teller">Kontrol Shift</Link>
+            <Link href="/reports/daily-sales">Laporan Harian</Link>
           </div>
           {recentSales.length ? (
             <div className={styles.recentGrid}>
               {recentSales.map((sale) => (
-                <article className={styles.recentCard} key={sale.id}>
+                <Link className={styles.recentCard} href={`/sales/${sale.id}`} key={sale.id}>
                   <span>{sale.receipt_number}</span>
                   <strong>{rupiah(sale.total_amount)}</strong>
-                  <small>{new Date(sale.sold_at).toLocaleString("id-ID")} · {sale.payment_status}</small>
-                </article>
+                  <small>{new Date(sale.sold_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} · {sale.payment_status}</small>
+                </Link>
               ))}
             </div>
           ) : (
