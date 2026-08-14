@@ -54,12 +54,12 @@ export default async function ClosingPage({ searchParams }: PageProps) {
     <main className={styles.page}>
       <header className={styles.topbar}>
         <div>
-          <span>CASH CONTROL · RECONCILIATION</span>
-          <strong>Daily Closing</strong>
+          <span>KONTROL KAS · REKONSILIASI</span>
+          <strong>Penutupan Harian</strong>
         </div>
         <nav>
           <Link href="/pos">POS</Link>
-          <Link href="/teller">Teller</Link>
+          <Link href="/teller">Kasir / Shift</Link>
           <Link href="/reports/daily-sales">Laporan Harian</Link>
           <Link href="/dashboard">Dashboard</Link>
         </nav>
@@ -68,10 +68,10 @@ export default async function ClosingPage({ searchParams }: PageProps) {
       <div className={styles.content}>
         <section className={styles.heading}>
           <div>
-            <span className={styles.kicker}>PHASE 1.3 · CLOSE WITH EVIDENCE</span>
-            <h1>Closing & Rekonsiliasi Teller</h1>
+            <span className={styles.kicker}>TUTUP SHIFT DENGAN BUKTI</span>
+            <h1>Penutupan & Rekonsiliasi Kasir</h1>
             <p>
-              Shift hanya boleh ditutup ketika sale, payment, inventory movement, dan jurnal seluruh transaksi pada shift sudah konsisten. Selisih kas tetap dicatat sebagai variance dan tidak pernah dihapus dari audit trail.
+              Shift hanya boleh ditutup ketika penjualan, pembayaran, stok, jurnal, dan transaksi Simpanan pada shift sudah konsisten. Selisih kas tetap dicatat dan tidak pernah dihapus dari jejak audit.
             </p>
           </div>
           <div className={styles.identity}>
@@ -92,12 +92,13 @@ export default async function ClosingPage({ searchParams }: PageProps) {
           <>
             <section className={styles.metrics}>
               <article><span>Kas awal</span><strong>{rupiah(reconciliation.shift.opening_cash_amount)}</strong><small>{timestamp(reconciliation.shift.opened_at)}</small></article>
-              <article><span>Transaksi</span><strong>{reconciliation.metrics.committedTransactions}</strong><small>{reconciliation.metrics.voidedTransactions} void</small></article>
+              <article><span>Transaksi penjualan</span><strong>{reconciliation.metrics.committedTransactions}</strong><small>{reconciliation.metrics.voidedTransactions} void</small></article>
               <article><span>Omzet committed</span><strong>{rupiah(reconciliation.metrics.committedSalesAmount)}</strong><small>semua metode</small></article>
-              <article><span>Cash confirmed</span><strong>{rupiah(reconciliation.metrics.cashConfirmedAmount)}</strong><small>masuk cash drawer</small></article>
-              <article><span>Expected cash</span><strong>{rupiah(reconciliation.metrics.expectedCashAmount)}</strong><small>kas awal + cash sales</small></article>
+              <article><span>Penjualan tunai</span><strong>{rupiah(reconciliation.metrics.cashConfirmedAmount)}</strong><small>masuk cash drawer</small></article>
+              <article><span>Arus kas Simpanan</span><strong>{rupiah(reconciliation.metrics.savingsCashDeltaAmount)}</strong><small>{reconciliation.metrics.savingsTransactionCount} transaksi setoran/penarikan/pembalikan tunai</small></article>
+              <article><span>Kas seharusnya</span><strong>{rupiah(reconciliation.metrics.expectedCashAmount)}</strong><small>kas awal + penjualan tunai + arus Simpanan</small></article>
               <article className={reconciliation.passed ? styles.passMetric : styles.failMetric}>
-                <span>Integrity gate</span>
+                <span>Pemeriksaan integritas</span>
                 <strong>{reconciliation.passed ? "PASS" : "CHECK"}</strong>
                 <small>{reconciliation.metrics.issueCount} exception</small>
               </article>
@@ -107,7 +108,7 @@ export default async function ClosingPage({ searchParams }: PageProps) {
               <article className={styles.panel}>
                 <div className={styles.panelHeader}>
                   <div>
-                    <span className={styles.kicker}>TRANSACTION INTEGRITY</span>
+                    <span className={styles.kicker}>PEMERIKSAAN TRANSAKSI</span>
                     <h2>{reconciliation.passed ? "Semua transaksi konsisten" : "Exception harus diperiksa"}</h2>
                   </div>
                   <span className={reconciliation.passed ? styles.passBadge : styles.checkBadge}>
@@ -124,53 +125,55 @@ export default async function ClosingPage({ searchParams }: PageProps) {
                           <strong>{issue.receiptNumber}</strong>
                           <p>{issue.message}</p>
                         </div>
-                        <Link href={`/sales/${issue.saleId}`}>Periksa struk</Link>
+                        <Link href={issue.code === "SAVINGS_JOURNAL" ? "/savings/accounts" : `/sales/${issue.saleId}`}>
+                          {issue.code === "SAVINGS_JOURNAL" ? "Periksa rekening" : "Periksa struk"}
+                        </Link>
                       </article>
                     ))}
                   </div>
                 ) : (
                   <div className={styles.passBox}>
-                    Sale lines, pembayaran, jurnal, dan inventory movement seluruh transaksi pada shift ini sudah cocok.
+                    Penjualan, pembayaran, stok, jurnal, dan transaksi Simpanan pada shift ini sudah cocok.
                   </div>
                 )}
               </article>
 
               <aside className={styles.panel}>
-                <span className={styles.kicker}>CASH COUNT</span>
+                <span className={styles.kicker}>HITUNG KAS</span>
                 <h2>Tutup cash drawer</h2>
                 <p className={styles.copy}>
-                  Hitung uang fisik terlebih dahulu. Expected cash tidak boleh diubah agar selisih dapat dilacak.
+                  Hitung uang fisik terlebih dahulu. Kas seharusnya tidak boleh diubah agar selisih dapat dilacak.
                 </p>
                 <div className={styles.expected}>
-                  <span>Expected cash</span>
+                  <span>Kas seharusnya</span>
                   <strong>{rupiah(reconciliation.metrics.expectedCashAmount)}</strong>
                 </div>
                 <form action={closeShiftAction} className={styles.closeForm}>
                   <label>
-                    Kas fisik / counted cash
+                    Kas fisik yang dihitung
                     <input name="countedCashAmount" inputMode="numeric" defaultValue={reconciliation.metrics.expectedCashAmount} required />
                   </label>
                   <button type="submit" disabled={!reconciliation.passed}>
                     {reconciliation.passed ? "Tutup Shift & Catat Rekonsiliasi" : "Perbaiki exception terlebih dahulu"}
                   </button>
                 </form>
-                <small className={styles.note}>Closing menyimpan expected cash, counted cash, variance, jumlah transaksi, dan status rekonsiliasi ke audit event.</small>
+                <small className={styles.note}>Penutupan menyimpan kas seharusnya, kas fisik, selisih, jumlah transaksi, dan status rekonsiliasi ke jejak audit.</small>
               </aside>
             </section>
           </>
         ) : (
           <section className={styles.noShift}>
-            <span className={styles.kicker}>NO OPEN SHIFT</span>
+            <span className={styles.kicker}>TIDAK ADA SHIFT AKTIF</span>
             <h2>Tidak ada shift aktif untuk akun ini.</h2>
-            <p>Buka shift dari Workspace Teller jika ingin memulai transaksi baru.</p>
-            <Link href="/teller">Kembali ke Teller</Link>
+            <p>Buka shift dari Workspace Kasir jika ingin memulai transaksi tunai baru.</p>
+            <Link href="/teller">Kembali ke Kasir / Shift</Link>
           </section>
         )}
 
         <section className={styles.historyPanel}>
           <div className={styles.panelHeader}>
             <div>
-              <span className={styles.kicker}>SHIFT HISTORY</span>
+              <span className={styles.kicker}>RIWAYAT SHIFT</span>
               <h2>12 shift terakhir organisasi</h2>
             </div>
             <Link href="/reports/daily-sales">Lihat laporan penjualan</Link>
@@ -180,7 +183,7 @@ export default async function ClosingPage({ searchParams }: PageProps) {
             <div className={styles.tableWrap}>
               <table>
                 <thead>
-                  <tr><th>Dibuka</th><th>Status</th><th>Transaksi</th><th>Omzet</th><th>Expected</th><th>Counted</th><th>Variance</th></tr>
+                  <tr><th>Dibuka</th><th>Status</th><th>Transaksi</th><th>Omzet</th><th>Kas seharusnya</th><th>Kas fisik</th><th>Selisih</th></tr>
                 </thead>
                 <tbody>
                   {history.map((shift) => (
