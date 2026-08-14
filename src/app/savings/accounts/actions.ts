@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getAccessContext } from "@/lib/access/context";
+import { getD1SchemaStatus } from "@/lib/d1/context";
+import { syncSavingsLedgerAccount, type SavingsRuleSnapshot } from "@/lib/d1/savings-ledger";
 import { createClient } from "@/lib/supabase/server";
 
 function text(formData: FormData, key: string) {
@@ -47,7 +49,7 @@ export async function openSavingsAccountAction(formData: FormData) {
 }
 
 export async function approveSavingsAccountAction(formData: FormData) {
-  await requireAccess("SAVINGS_ACCOUNT_APPROVE");
+  const access = await requireAccess("SAVINGS_ACCOUNT_APPROVE");
   const accountId = text(formData, "account_id");
   if (!accountId) redirect("/savings/accounts?error=invalid");
 
@@ -56,11 +58,33 @@ export async function approveSavingsAccountAction(formData: FormData) {
     .update({ status: "ACTIVE" })
     .eq("id", accountId)
     .eq("status", "PENDING")
-    .select("id")
+    .select("id,organization_id,member_id,product_id,product_version_id,account_number,rule_snapshot,opened_at")
     .maybeSingle();
 
   if (error || !data) redirect(`/savings/accounts?error=${accountError(error?.message)}`);
+
+  try {
+    const schema = await getD1SchemaStatus();
+    if (schema.features.savingsLedger && data.organization_id === access.organization.id) {
+      const rules = (data.rule_snapshot || {}) as SavingsRuleSnapshot;
+      await syncSavingsLedgerAccount({
+        organizationId: access.organization.id,
+        savingsAccountId: data.id,
+        memberId: data.member_id,
+        productId: data.product_id,
+        productVersionId: data.product_version_id,
+        accountNumber: data.account_number,
+        productCode: String(rules.product_code || "SAVINGS"),
+        openedAt: data.opened_at,
+        rules,
+      });
+    }
+  } catch {
+    // Cross-database sync is intentionally best-effort. The integrity report exposes deferred sync.
+  }
+
   revalidatePath("/savings/accounts");
+  revalidatePath("/savings/reports");
   revalidatePath("/approvals");
   redirect("/savings/accounts?status=approved");
 }
