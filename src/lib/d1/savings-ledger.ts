@@ -42,7 +42,7 @@ function nowIso(){ return new Date().toISOString(); }
 function documentNumber(prefix:string){ return `${prefix}-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().replace(/-/g,"").slice(0,5).toUpperCase()}`; }
 function integer(value:unknown){ const n=Number(value??0); return Number.isSafeInteger(n)&&n>=0?n:0; }
 function optionalInteger(value:unknown){ if(value===null||value===undefined||value==="") return null; const n=Number(value); return Number.isSafeInteger(n)&&n>=0?n:null; }
-function addDays(iso:string,days:number|null){ if(!days||days<=0)return null; const ms=Date.parse(iso); if(!Number.isFinite(ms))return null; return new Date(ms+days*86_400_000).toISOString().slice(0,10); }
+function addDays(iso:string,days:number|null){ if(!days||days<=0)return null; const ms=Date.parse(iso); if(!Number.isFinite(ms))return null; const wibMs=ms+(7*60*60*1000); return new Date(wibMs+days*86_400_000).toISOString().slice(0,10); }
 function eventCode(value:unknown,fallback:string){const code=String(value||fallback).trim().toUpperCase();if(!/^[A-Z][A-Z0-9_]{2,59}$/.test(code))throw new Error("Kode mapping akuntansi produk tidak valid.");return code;}
 
 async function ensureSavingsAccountingFoundation(organizationId:string){
