@@ -77,14 +77,12 @@ function unitArray(value: unknown): AccessContext["units"] {
 
 async function loadAccessContext(): Promise<AccessContext | null> {
   const supabase = await createClient();
-
-  const [{ data: authData }, { data: rpcData, error: rpcError }] = await Promise.all([
-    supabase.auth.getUser(),
-    supabase.rpc("get_my_access_context"),
-  ]);
-
+  const { data: authData } = await supabase.auth.getUser();
   const user = authData.user;
-  if (!user || rpcError || !rpcData || typeof rpcData !== "object") return null;
+  if (!user) return null;
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc("get_my_access_context");
+  if (rpcError || !rpcData || typeof rpcData !== "object") return null;
 
   const rpc = rpcData as RpcAccessContext;
   const organization = rpc.organization;
