@@ -21,6 +21,12 @@ function checked(formData: FormData, key: string) {
   return formData.get(key) === "on" || formData.get(key) === "true" || formData.get(key) === "1";
 }
 
+function accountingEventCode(formData: FormData, key: string, fallback: string) {
+  const value = (text(formData, key) || fallback).toUpperCase();
+  if (!/^[A-Z][A-Z0-9_]{2,59}$/.test(value)) return null;
+  return value;
+}
+
 async function requireAccess(permission: string) {
   const access = await getAccessContext();
   if (!access) redirect("/login");
@@ -55,7 +61,9 @@ export async function updateSavingsDraftAction(formData: FormData) {
   const productId = text(formData, "product_id");
   const versionId = text(formData, "version_id");
   const displayName = text(formData, "display_name");
-  if (!productId || !versionId || displayName.length < 3) redirect(`/savings/products/${productId}?error=invalid`);
+  const depositEventCode = accountingEventCode(formData, "deposit_accounting_event_code", "SAVINGS_DEPOSIT");
+  const withdrawalEventCode = accountingEventCode(formData, "withdrawal_accounting_event_code", "SAVINGS_WITHDRAWAL");
+  if (!productId || !versionId || displayName.length < 3 || !depositEventCode || !withdrawalEventCode) redirect(`/savings/products/${productId}?error=invalid`);
 
   const maxBalance = integer(formData, "max_balance_amount", true);
   const recurringRequired = checked(formData, "recurring_required");
@@ -85,6 +93,8 @@ export async function updateSavingsDraftAction(formData: FormData) {
     recurring_frequency: recurringRequired ? text(formData, "recurring_frequency") || null : null,
     early_withdrawal_allowed: checked(formData, "early_withdrawal_allowed"),
     payment_channels: paymentChannels.length ? paymentChannels : ["CASH"],
+    deposit_accounting_event_code: depositEventCode,
+    withdrawal_accounting_event_code: withdrawalEventCode,
     regulatory_basis: text(formData, "regulatory_basis") || null,
     terms_text: text(formData, "terms_text") || null,
     effective_from: text(formData, "effective_from") || null,
