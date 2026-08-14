@@ -51,15 +51,16 @@ function errorCode(error:unknown){
   const m=(error instanceof Error?error.message:String(error)).toUpperCase();
   if(m.includes("OPEN_SHIFT"))return "shift";
   if(m.includes("BELOW_MINIMUM"))return "minimum";
-  if(m.includes("MIN_BALANCE"))return "balance";
+  if(m.includes("MIN_BALANCE")||m.includes("NEGATIVE_BALANCE"))return "balance";
   if(m.includes("MAX_BALANCE"))return "maximum";
   if(m.includes("LOCKED"))return "locked";
   if(m.includes("NOT_MATURED"))return "maturity";
   if(m.includes("DEPOSIT_DISABLED"))return "deposit-disabled";
   if(m.includes("WITHDRAWAL_DISABLED"))return "withdraw-disabled";
+  if(m.includes("HARUS MEMAKAI AKUN KAS")||m.includes("TRANSFER HARUS MEMAKAI AKUN BANK"))return "treasury";
   if(m.includes("MAPPING"))return "mapping";
   if(m.includes("ACCOUNT_NOT_ACTIVE")||m.includes("REKENING"))return "account";
-  if(m.includes("ACCOUNTING_PERIOD_CLOSED"))return "period";
+  if(m.includes("ACCOUNTING_PERIOD_CLOSED")||m.includes("ACCOUNTING_PERIOD_LOCKED")||m.includes("PERIOD"))return "period";
   if(m.includes("ALREADY")||m.includes("SUDAH MEMILIKI PEMBALIKAN"))return "reversed";
   return "save";
 }
@@ -80,7 +81,7 @@ async function post(formData:FormData,type:"DEPOSIT"|"WITHDRAWAL"){
       note:text(formData,"note")||null,idempotencyKey:key,
     });
   }catch(error){redirect(`/savings/accounts/${accountId}?error=${errorCode(error)}`);}
-  for(const path of [`/savings/accounts/${accountId}`,"/savings/accounts","/teller","/finance","/finance/treasury"])revalidatePath(path);
+  for(const path of [`/savings/accounts/${accountId}`,"/savings/accounts","/teller","/closing","/finance","/finance/treasury"])revalidatePath(path);
   redirect(`/savings/accounts/${accountId}?status=${type==="DEPOSIT"?"deposited":"withdrawn"}`);
 }
 
@@ -96,6 +97,6 @@ export async function reverseSavingsAction(formData:FormData){
     const shift=await getOpenShift(access.organization.id,access.user.id);
     await reverseSavingsTransaction({organizationId:access.organization.id,actorUserId:access.user.id,transactionId,shiftId:shift?.id||null,reason,idempotencyKey:key});
   }catch(error){redirect(`/savings/accounts/${accountId}?error=${errorCode(error)}`);}
-  for(const path of [`/savings/accounts/${accountId}`,"/savings/accounts","/teller","/finance","/finance/treasury"])revalidatePath(path);
+  for(const path of [`/savings/accounts/${accountId}`,"/savings/accounts","/teller","/closing","/finance","/finance/treasury"])revalidatePath(path);
   redirect(`/savings/accounts/${accountId}?status=reversed`);
 }
