@@ -43,33 +43,34 @@ function documentNumber(prefix:string){ return `${prefix}-${Date.now().toString(
 function integer(value:unknown){ const n=Number(value??0); return Number.isSafeInteger(n)&&n>=0?n:0; }
 function optionalInteger(value:unknown){ if(value===null||value===undefined||value==="") return null; const n=Number(value); return Number.isSafeInteger(n)&&n>=0?n:null; }
 function addDays(iso:string,days:number|null){ if(!days||days<=0)return null; const ms=Date.parse(iso); if(!Number.isFinite(ms))return null; return new Date(ms+days*86_400_000).toISOString().slice(0,10); }
+function eventCode(value:unknown,fallback:string){const code=String(value||fallback).trim().toUpperCase();if(!/^[A-Z][A-Z0-9_]{2,59}$/.test(code))throw new Error("Kode mapping akuntansi produk tidak valid.");return code;}
 
 async function ensureSavingsAccountingFoundation(organizationId:string){
   await ensureAccountingFoundation(organizationId);
-  const db=getD1(); const now=nowIso();
-  const accountId=`acct:${organizationId}:2-2000`;
+}
+
+async function ensureSavingsEventFoundation(organizationId:string,code:string,kind:"DEPOSIT"|"WITHDRAWAL",productName:string){
+  await ensureSavingsAccountingFoundation(organizationId);
+  const db=getD1();
+  const existing=await db.prepare("SELECT id FROM accounting_mappings WHERE organization_id=? AND event_code=? LIMIT 1")
+    .bind(organizationId,code).first<{id:string}>();
+  if(existing)return;
+  if(!/^SAVINGS_(DEPOSIT|WITHDRAWAL)(_[A-Z0-9_]{2,40})?$/.test(code))throw new Error("Kode mapping khusus simpanan harus diawali SAVINGS_DEPOSIT atau SAVINGS_WITHDRAWAL.");
+  if(kind==="DEPOSIT"&&!code.startsWith("SAVINGS_DEPOSIT"))throw new Error("Kode mapping setoran harus diawali SAVINGS_DEPOSIT.");
+  if(kind==="WITHDRAWAL"&&!code.startsWith("SAVINGS_WITHDRAWAL"))throw new Error("Kode mapping penarikan harus diawali SAVINGS_WITHDRAWAL.");
+  const now=nowIso();
+  const mapId=`map:${organizationId}:${code}`;const versionId=`mapv:${organizationId}:${code}:1`;
+  const cashId=`acct:${organizationId}:1-1000`;const liabilityId=`acct:${organizationId}:2-2000`;
+  const debitId=kind==="DEPOSIT"?cashId:liabilityId;const creditId=kind==="DEPOSIT"?liabilityId:cashId;
+  const label=`${kind==="DEPOSIT"?"Setoran":"Penarikan"} ${productName}`;
   await db.batch([
-    db.prepare(`INSERT OR IGNORE INTO chart_of_accounts
-      (id,organization_id,code,name,account_type,normal_balance,parent_account_id,status,is_system,created_by,updated_by,created_at,updated_at)
-      VALUES (?,?,'2-2000','Simpanan Anggota','LIABILITY','CREDIT',NULL,'ACTIVE',1,'SYSTEM_FOUNDATION','SYSTEM_FOUNDATION',?,?)`)
-      .bind(accountId,organizationId,now,now),
-    ...[{
-      code:"SAVINGS_DEPOSIT",name:"Setoran simpanan anggota",debit:`acct:${organizationId}:1-1000`,credit:accountId,
-    },{
-      code:"SAVINGS_WITHDRAWAL",name:"Penarikan simpanan anggota",debit:accountId,credit:`acct:${organizationId}:1-1000`,
-    }].flatMap((event)=>{
-      const mapId=`map:${organizationId}:${event.code}`; const versionId=`mapv:${organizationId}:${event.code}:1`;
-      return [
-        db.prepare(`INSERT OR IGNORE INTO accounting_mappings
-          (id,organization_id,event_code,event_name,status,current_approved_version,created_by,updated_by,created_at,updated_at)
-          VALUES (?,?,?,?,'ACTIVE',1,'SYSTEM_FOUNDATION','SYSTEM_FOUNDATION',?,?)`)
-          .bind(mapId,organizationId,event.code,event.name,now,now),
-        db.prepare(`INSERT OR IGNORE INTO accounting_mapping_versions
-          (id,mapping_id,version,debit_account_id,credit_account_id,status,change_note,created_by,approved_by,created_at,approved_at)
-          VALUES (?,?,1,?,?,'APPROVED','Default savings accounting foundation','SYSTEM_FOUNDATION','SYSTEM_FOUNDATION',?,?)`)
-          .bind(versionId,mapId,event.debit,event.credit,now,now),
-      ];
-    }),
+    db.prepare(`INSERT OR IGNORE INTO accounting_mappings
+      (id,organization_id,event_code,event_name,status,current_approved_version,created_by,updated_by,created_at,updated_at)
+      VALUES (?,?,?,?,'ACTIVE',1,'SYSTEM_FOUNDATION','SYSTEM_FOUNDATION',?,?)`).bind(mapId,organizationId,code,label,now,now),
+    db.prepare(`INSERT OR IGNORE INTO accounting_mapping_versions
+      (id,mapping_id,version,debit_account_id,credit_account_id,status,change_note,created_by,approved_by,created_at,approved_at)
+      VALUES (?,?,1,?,?,'APPROVED','Default product savings mapping','SYSTEM_FOUNDATION','SYSTEM_FOUNDATION',?,?)`)
+      .bind(versionId,mapId,debitId,creditId,now,now),
   ]);
 }
 
@@ -79,6 +80,11 @@ export async function syncSavingsLedgerAccount(input:{
 }){
   await ensureSavingsAccountingFoundation(input.organizationId);
   const db=getD1(); const now=nowIso(); const rules=input.rules||{};
+  const productName=String(rules.display_name||input.productCode);
+  const depositEventCode=eventCode(rules.deposit_accounting_event_code,"SAVINGS_DEPOSIT");
+  const withdrawalEventCode=eventCode(rules.withdrawal_accounting_event_code,"SAVINGS_WITHDRAWAL");
+  await ensureSavingsEventFoundation(input.organizationId,depositEventCode,"DEPOSIT",productName);
+  await ensureSavingsEventFoundation(input.organizationId,withdrawalEventCode,"WITHDRAWAL",productName);
   const lockDays=integer(rules.lock_days); const maturityDays=optionalInteger(rules.maturity_days);
   await db.prepare(`INSERT OR IGNORE INTO savings_ledger_accounts (
     id,organization_id,member_id,product_id,product_version_id,account_number,product_code,product_name,status,opened_at,
@@ -86,17 +92,17 @@ export async function syncSavingsLedgerAccount(input:{
     early_withdrawal_allowed,deposit_enabled,withdrawal_enabled,deposit_event_code,withdrawal_event_code,rule_snapshot_json,created_at
   ) VALUES (?,?,?,?,?,?,?,?,'ACTIVE',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
     input.savingsAccountId,input.organizationId,input.memberId,input.productId,input.productVersionId,input.accountNumber,input.productCode,
-    String(rules.display_name||input.productCode),input.openedAt,integer(rules.min_opening_amount),integer(rules.min_deposit_amount),
+    productName,input.openedAt,integer(rules.min_opening_amount),integer(rules.min_deposit_amount),
     integer(rules.min_withdrawal_amount),integer(rules.min_balance_amount),optionalInteger(rules.max_balance_amount),
     addDays(input.openedAt,lockDays),addDays(input.openedAt,maturityDays),rules.early_withdrawal_allowed===false?0:1,
     rules.deposit_enabled===false?0:1,rules.withdrawal_enabled===false?0:1,
-    String(rules.deposit_accounting_event_code||"SAVINGS_DEPOSIT"),String(rules.withdrawal_accounting_event_code||"SAVINGS_WITHDRAWAL"),
-    JSON.stringify(rules),now,
+    depositEventCode,withdrawalEventCode,JSON.stringify(rules),now,
   ).run();
-  const row=await db.prepare(`SELECT id,product_version_id FROM savings_ledger_accounts WHERE id=? AND organization_id=? LIMIT 1`)
-    .bind(input.savingsAccountId,input.organizationId).first<{id:string;product_version_id:string}>();
+  const row=await db.prepare(`SELECT id,product_version_id,deposit_event_code,withdrawal_event_code FROM savings_ledger_accounts WHERE id=? AND organization_id=? LIMIT 1`)
+    .bind(input.savingsAccountId,input.organizationId).first<{id:string;product_version_id:string;deposit_event_code:string;withdrawal_event_code:string}>();
   if(!row) throw new Error("Ledger rekening simpanan belum dapat dibuat.");
   if(row.product_version_id!==input.productVersionId) throw new Error("Versi aturan ledger tidak sama dengan rekening sumber.");
+  if(row.deposit_event_code!==depositEventCode||row.withdrawal_event_code!==withdrawalEventCode)throw new Error("Mapping rekening tidak sama dengan versi produk saat rekening dibuka.");
 }
 
 export async function getSavingsLedgerAccount(organizationId:string,savingsAccountId:string){
@@ -131,16 +137,17 @@ async function treasuryForPosting(organizationId:string,treasuryAccountId:string
   return row;
 }
 
-async function savingsMapping(organizationId:string,eventCode:string,kind:"DEPOSIT"|"WITHDRAWAL"){
+async function savingsMapping(organizationId:string,eventCodeValue:string,kind:"DEPOSIT"|"WITHDRAWAL"){
   await ensureSavingsAccountingFoundation(organizationId);
-  const mapping=await getActiveAccountingMapping(organizationId,eventCode);
-  if(!mapping)throw new Error(`Mapping akuntansi ${eventCode} belum APPROVED.`);
+  const code=eventCode(eventCodeValue,kind==="DEPOSIT"?"SAVINGS_DEPOSIT":"SAVINGS_WITHDRAWAL");
+  const mapping=await getActiveAccountingMapping(organizationId,code);
+  if(!mapping)throw new Error(`Mapping akuntansi ${code} belum APPROVED.`);
   const liabilityCode=kind==="DEPOSIT"?mapping.credit_code:mapping.debit_code;
   const db=getD1();
   const account=await db.prepare(`SELECT code,account_type,status FROM chart_of_accounts WHERE organization_id=? AND code=? LIMIT 1`)
     .bind(organizationId,liabilityCode).first<{code:string;account_type:string;status:string}>();
   if(!account||account.status!=="ACTIVE"||account.account_type!=="LIABILITY")throw new Error("Mapping simpanan harus memakai akun kewajiban aktif pada sisi Simpanan Anggota.");
-  return {version:Number(mapping.version),liabilityCode:account.code,eventCode};
+  return {version:Number(mapping.version),liabilityCode:account.code,eventCode:code};
 }
 
 export async function postSavingsTransaction(input:{
@@ -157,8 +164,8 @@ export async function postSavingsTransaction(input:{
   const account=await getSavingsLedgerAccount(input.organizationId,input.savingsAccountId);
   if(!account||account.status!=="ACTIVE")throw new Error("Rekening ledger belum ACTIVE.");
   const treasury=await treasuryForPosting(input.organizationId,input.treasuryAccountId,input.paymentMethod);
-  const eventCode=input.type==="DEPOSIT"?account.deposit_event_code:account.withdrawal_event_code;
-  const mapping=await savingsMapping(input.organizationId,eventCode,input.type);
+  const eventCodeValue=input.type==="DEPOSIT"?account.deposit_event_code:account.withdrawal_event_code;
+  const mapping=await savingsMapping(input.organizationId,eventCodeValue,input.type);
   const transactionId=crypto.randomUUID(); const journalId=crypto.randomUUID(); const now=nowIso();
   const transactionNumber=documentNumber(input.type==="DEPOSIT"?"SDEP":"SWDR");
   const journalNumber=documentNumber("JRN-SAV");
@@ -181,11 +188,11 @@ export async function postSavingsTransaction(input:{
       journal_entry_id,original_transaction_id,reversal_reason,actor_user_id,occurred_at,idempotency_key,created_at
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,?,?,?,?,?)`).bind(
       transactionId,input.organizationId,account.id,transactionNumber,input.type,input.amount,delta,input.paymentMethod,treasury.id,
-      input.paymentMethod==="CASH"?(input.shiftId||null):null,input.referenceNumber?.trim()||null,input.note?.trim()||null,eventCode,mapping.version,
+      input.paymentMethod==="CASH"?(input.shiftId||null):null,input.referenceNumber?.trim()||null,input.note?.trim()||null,mapping.eventCode,mapping.version,
       treasury.chart_code,mapping.liabilityCode,journalId,input.actorUserId,now,input.idempotencyKey,now,
     ),
     db.prepare(`INSERT INTO transaction_audit_events (id,organization_id,actor_user_id,event_type,entity_type,entity_id,payload_json,created_at)
-      VALUES (?,?,?,?,'SAVINGS_TRANSACTION',?,?,?)`).bind(crypto.randomUUID(),input.organizationId,input.actorUserId,`SAVINGS_${input.type}_POSTED`,transactionId,JSON.stringify({accountNumber:account.account_number,amount:input.amount,method:input.paymentMethod,mappingVersion:mapping.version,assetAccount:treasury.chart_code,liabilityAccount:mapping.liabilityCode}),now),
+      VALUES (?,?,?,?,'SAVINGS_TRANSACTION',?,?,?)`).bind(crypto.randomUUID(),input.organizationId,input.actorUserId,`SAVINGS_${input.type}_POSTED`,transactionId,JSON.stringify({accountNumber:account.account_number,amount:input.amount,method:input.paymentMethod,eventCode:mapping.eventCode,mappingVersion:mapping.version,assetAccount:treasury.chart_code,liabilityAccount:mapping.liabilityCode}),now),
   ];
   await db.batch(statements);
   return transactionId;
