@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getD1SchemaStatus } from "@/lib/d1/context";
 import { getOpenShift } from "@/lib/d1/teller";
 import { listTreasuryAccounts } from "@/lib/d1/treasury";
-import { getSavingsLedgerAccount, listSavingsTransactions, type SavingsRuleSnapshot } from "@/lib/d1/savings-ledger";
+import { getSavingsLedgerAccount, listSavingsTransactions, syncSavingsLedgerAccount, type SavingsRuleSnapshot } from "@/lib/d1/savings-ledger";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { depositSavingsAction, reverseSavingsAction, withdrawSavingsAction } from "../transaction-actions";
 import styles from "./ledger.module.css";
@@ -27,6 +27,7 @@ export default async function SavingsAccountDetail({params,searchParams}:Props){
     .eq("id",id).eq("organization_id",access.organization.id).maybeSingle();
   if(error||!account||account.status!=="ACTIVE")notFound();
   const rules=(account.rule_snapshot||{}) as SavingsRuleSnapshot;
+  await syncSavingsLedgerAccount({organizationId:access.organization.id,savingsAccountId:account.id,memberId:account.member_id,productId:account.product_id,productVersionId:account.product_version_id,accountNumber:account.account_number,productCode:String(rules.product_code||"SAVINGS"),openedAt:account.opened_at,rules});
   const memberPromise=access.permissions.includes("MEMBER_VIEW")?supabase.from("members").select("member_number,full_name").eq("id",account.member_id).maybeSingle():Promise.resolve({data:null,error:null});
   const [ledger,transactions,treasury,shift,memberResult]=await Promise.all([
     getSavingsLedgerAccount(access.organization.id,id),listSavingsTransactions(access.organization.id,id,120),listTreasuryAccounts(access.organization.id),getOpenShift(access.organization.id,access.user.id),memberPromise,
@@ -54,7 +55,7 @@ export default async function SavingsAccountDetail({params,searchParams}:Props){
           <input type="hidden" name="account_id" value={id}/><input type="hidden" name="idempotency_key" value={`sav-dep-${crypto.randomUUID()}`}/>
           <label>Nominal<input name="amount" inputMode="numeric" required min={1} placeholder="contoh: 50000"/></label>
           <label>Cara penerimaan<select name="payment_method" defaultValue="CASH"><option value="CASH">Tunai</option><option value="BANK_TRANSFER">Transfer Bank</option></select></label>
-          <label>Masuk ke Kas/Bank<select name="treasury_account_id" required defaultValue=""><option value="" disabled>Pilih Kas/Bank</option>{activeTreasury.map(t=><option key={t.id} value={t.id}>{t.account_type==="CASH"?"Kas":"Bank"} · {t.name}</option>)}</select></label>
+          <label>Masuk ke Kas/Bank<select name="treasury_account_id" required defaultValue=""><option value="" disabled>Pilih Kas/Bank sesuai cara penerimaan</option>{activeTreasury.map(t=><option key={t.id} value={t.id}>{t.account_type==="CASH"?"Kas":"Bank"} · {t.name}</option>)}</select></label>
           <label>Referensi opsional<input name="reference_number" maxLength={80} placeholder="nomor transfer / bukti"/></label><label>Catatan<input name="note" maxLength={160} placeholder="opsional"/></label>
           <PendingSubmitButton pendingLabel="Mencatat setoran…">Catat Setoran</PendingSubmitButton>{!shift?<small className={styles.hint}>Shift Anda belum OPEN. Pilih Transfer Bank atau buka shift sebelum transaksi Tunai.</small>:<small className={styles.hint}>Shift tunai aktif.</small>}
         </form></article>:null}
@@ -63,7 +64,7 @@ export default async function SavingsAccountDetail({params,searchParams}:Props){
           <input type="hidden" name="account_id" value={id}/><input type="hidden" name="idempotency_key" value={`sav-wdr-${crypto.randomUUID()}`}/>
           <label>Nominal<input name="amount" inputMode="numeric" required min={1} placeholder="contoh: 25000"/></label>
           <label>Cara pembayaran<select name="payment_method" defaultValue="CASH"><option value="CASH">Tunai</option><option value="BANK_TRANSFER">Transfer Bank</option></select></label>
-          <label>Keluar dari Kas/Bank<select name="treasury_account_id" required defaultValue=""><option value="" disabled>Pilih Kas/Bank</option>{activeTreasury.map(t=><option key={t.id} value={t.id}>{t.account_type==="CASH"?"Kas":"Bank"} · {t.name}</option>)}</select></label>
+          <label>Keluar dari Kas/Bank<select name="treasury_account_id" required defaultValue=""><option value="" disabled>Pilih Kas/Bank sesuai cara pembayaran</option>{activeTreasury.map(t=><option key={t.id} value={t.id}>{t.account_type==="CASH"?"Kas":"Bank"} · {t.name}</option>)}</select></label>
           <label>Referensi opsional<input name="reference_number" maxLength={80} placeholder="nomor transfer / bukti"/></label><label>Catatan<input name="note" maxLength={160} placeholder="opsional"/></label>
           <PendingSubmitButton pendingLabel="Mencatat penarikan…">Catat Penarikan</PendingSubmitButton>
         </form></article>:null}
