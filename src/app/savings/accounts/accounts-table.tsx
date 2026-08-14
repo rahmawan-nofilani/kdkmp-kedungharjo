@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { approveSavingsAccountAction, rejectSavingsAccountAction } from "./actions";
 import styles from "./accounts.module.css";
@@ -22,7 +23,7 @@ export function SavingsAccountsTable({accounts,members,userId,canApprove}:{accou
       <td>{row.status==="PENDING"?canApprove&&!own?<div className={styles.actions}>
         <form action={approveSavingsAccountAction}><input type="hidden" name="account_id" value={row.id}/><PendingSubmitButton pendingLabel="Mengaktifkan…">Periksa & Aktifkan</PendingSubmitButton></form>
         <form action={rejectSavingsAccountAction} className={styles.reject}><input type="hidden" name="account_id" value={row.id}/><input name="rejection_reason" required minLength={5} maxLength={300} placeholder="Alasan penolakan"/><PendingSubmitButton pendingLabel="Menolak…">Tolak</PendingSubmitButton></form>
-      </div>:<span className={styles.wait}>Menunggu user lain</span>:row.status==="ACTIVE"?<span className={styles.safe}>Belum ada transaksi uang</span>:"—"}</td>
+      </div>:<span className={styles.wait}>Menunggu user lain</span>:row.status==="ACTIVE"?<Link className={styles.detailLink} href={`/savings/accounts/${row.id}`}>Buka Saldo & Mutasi →</Link>:"—"}</td>
     </tr>;
   })}</tbody></table></div>;
 }
