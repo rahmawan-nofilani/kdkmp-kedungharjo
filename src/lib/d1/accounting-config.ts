@@ -39,6 +39,8 @@ export const ACCOUNTING_EVENTS = [
   { code: "SUPPLIER_INVOICE_APPROVED", name: "Invoice supplier approved", debit: "2-1500", credit: "2-1000" },
   { code: "SUPPLIER_PAYMENT_BANK", name: "Pembayaran supplier via bank", debit: "2-1000", credit: "1-1100" },
   { code: "SUPPLIER_PAYMENT_CASH", name: "Pembayaran supplier via kas", debit: "2-1000", credit: "1-1000" },
+  { code: "SAVINGS_DEPOSIT", name: "Setoran simpanan anggota", debit: "1-1000", credit: "2-2000" },
+  { code: "SAVINGS_WITHDRAWAL", name: "Penarikan simpanan anggota", debit: "2-2000", credit: "1-1000" },
 ] as const;
 
 const FOUNDATION_ACCOUNTS = [
@@ -47,6 +49,7 @@ const FOUNDATION_ACCOUNTS = [
   { code: "1-1300", name: "Persediaan", type: "ASSET", normal: "DEBIT" },
   { code: "2-1000", name: "Hutang Supplier", type: "LIABILITY", normal: "CREDIT" },
   { code: "2-1500", name: "GRNI / Barang diterima belum ditagih", type: "LIABILITY", normal: "CREDIT" },
+  { code: "2-2000", name: "Simpanan Anggota", type: "LIABILITY", normal: "CREDIT" },
   { code: "3-1000", name: "Modal / Ekuitas Dasar", type: "EQUITY", normal: "CREDIT" },
   { code: "4-1000", name: "Pendapatan Penjualan", type: "REVENUE", normal: "CREDIT" },
   { code: "5-1000", name: "Harga Pokok Penjualan", type: "EXPENSE", normal: "DEBIT" },
