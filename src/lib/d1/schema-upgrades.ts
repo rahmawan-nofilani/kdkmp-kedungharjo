@@ -7,7 +7,8 @@ import { applyAccountingRuntimeV6 } from "./accounting-runtime-schema";
 import { applyTreasuryPeriodV7 } from "./treasury-period-schema";
 import { applyControlledJournalV8 } from "./controlled-journal-schema";
 import { applyAssetDepreciationV9 } from "./asset-schema";
-import { applySystemCapacityV10, SYSTEM_CAPACITY_VERSION } from "./system-capacity-schema";
+import { applySystemCapacityV10 } from "./system-capacity-schema";
+import { applySavingsLedgerV11, SAVINGS_LEDGER_VERSION } from "./savings-ledger-schema";
 
 export const INVENTORY_CONTROL_VERSION = "inventory_control_v2";
 
@@ -97,39 +98,30 @@ function toStatements(sql: string) {
 
 export async function applyInventoryControlV2() {
   const db = getD1();
-  const existing = await db
-    .prepare("SELECT version FROM app_schema_versions WHERE version = ? LIMIT 1")
-    .bind(INVENTORY_CONTROL_VERSION)
-    .first<{ version: string }>();
-
+  const existing = await db.prepare("SELECT version FROM app_schema_versions WHERE version = ? LIMIT 1")
+    .bind(INVENTORY_CONTROL_VERSION).first<{ version: string }>();
   if (existing?.version) return { alreadyApplied: true, statements: 0 };
 
   const statements = toStatements(INVENTORY_CONTROL_SQL);
   let completed = 0;
   for (let index = 0; index < statements.length; index += 1) {
     const statement = statements[index];
-    try {
-      await db.exec(`${statement};`);
-      completed += 1;
-    } catch (error) {
+    try { await db.exec(`${statement};`); completed += 1; }
+    catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const operation = statement.replace(/\s+/g, " ").slice(0, 100);
       throw new Error(`D1_UPGRADE_V2_STEP_${index + 1}: ${message} | SQL: ${operation}`);
     }
   }
 
-  try {
-    await db.exec(STOCK_OPNAME_STALE_GUARD_SQL);
-    completed += 1;
-  } catch (error) {
+  try { await db.exec(STOCK_OPNAME_STALE_GUARD_SQL); completed += 1; }
+  catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`D1_UPGRADE_V2_STEP_${statements.length + 1}: ${message} | SQL: CREATE TRIGGER stock_opname_stale_guard`);
   }
 
-  await db
-    .prepare("INSERT OR IGNORE INTO app_schema_versions (version, applied_at) VALUES (?, datetime('now'))")
-    .bind(INVENTORY_CONTROL_VERSION)
-    .run();
+  await db.prepare("INSERT OR IGNORE INTO app_schema_versions (version, applied_at) VALUES (?, datetime('now'))")
+    .bind(INVENTORY_CONTROL_VERSION).run();
   completed += 1;
   return { alreadyApplied: false, statements: completed };
 }
@@ -145,31 +137,19 @@ export async function applyPendingD1Migrations() {
   const controlledJournal = await applyControlledJournalV8();
   const assetDepreciation = await applyAssetDepreciationV9();
   const systemCapacity = await applySystemCapacityV10();
+  const savingsLedger = await applySavingsLedgerV11();
 
   return {
     initialized: true,
     alreadyInitialized:
-      core.alreadyInitialized &&
-      inventory.alreadyApplied &&
-      procurement.alreadyApplied &&
-      procurementAccounting.alreadyApplied &&
-      accountingConfig.alreadyApplied &&
-      accountingRuntime.alreadyApplied &&
-      treasuryPeriod.alreadyApplied &&
-      controlledJournal.alreadyApplied &&
-      assetDepreciation.alreadyApplied &&
-      systemCapacity.alreadyApplied,
+      core.alreadyInitialized && inventory.alreadyApplied && procurement.alreadyApplied &&
+      procurementAccounting.alreadyApplied && accountingConfig.alreadyApplied && accountingRuntime.alreadyApplied &&
+      treasuryPeriod.alreadyApplied && controlledJournal.alreadyApplied && assetDepreciation.alreadyApplied &&
+      systemCapacity.alreadyApplied && savingsLedger.alreadyApplied,
     statements:
-      core.statements +
-      inventory.statements +
-      procurement.statements +
-      procurementAccounting.statements +
-      accountingConfig.statements +
-      accountingRuntime.statements +
-      treasuryPeriod.statements +
-      controlledJournal.statements +
-      assetDepreciation.statements +
-      systemCapacity.statements,
-    currentVersion: SYSTEM_CAPACITY_VERSION,
+      core.statements + inventory.statements + procurement.statements + procurementAccounting.statements +
+      accountingConfig.statements + accountingRuntime.statements + treasuryPeriod.statements +
+      controlledJournal.statements + assetDepreciation.statements + systemCapacity.statements + savingsLedger.statements,
+    currentVersion: SAVINGS_LEDGER_VERSION,
   };
 }
