@@ -123,8 +123,11 @@ BEGIN
 
   SELECT CASE WHEN NEW.transaction_type='DEPOSIT' AND NEW.amount < COALESCE((
     SELECT CASE
-      WHEN COALESCE((SELECT SUM(t.balance_delta_amount) FROM savings_ledger_transactions t WHERE t.savings_account_id=NEW.savings_account_id),0)=0
-      THEN MAX(min_opening_amount,min_deposit_amount)
+      WHEN NOT EXISTS (
+        SELECT 1 FROM savings_ledger_transactions d
+        WHERE d.savings_account_id=NEW.savings_account_id AND d.transaction_type='DEPOSIT'
+          AND NOT EXISTS (SELECT 1 FROM savings_ledger_transactions r WHERE r.original_transaction_id=d.id)
+      ) THEN MAX(min_opening_amount,min_deposit_amount)
       ELSE min_deposit_amount END
     FROM savings_ledger_accounts WHERE id=NEW.savings_account_id
   ),0) THEN RAISE(ABORT, 'SAVINGS_DEPOSIT_BELOW_MINIMUM') END;
@@ -155,7 +158,11 @@ BEGIN
       AND date(NEW.occurred_at,'+7 hours') < date(a.maturity_date)
   ) THEN RAISE(ABORT, 'SAVINGS_NOT_MATURED') END;
 
-  SELECT CASE WHEN NEW.balance_delta_amount < 0 AND EXISTS (
+  SELECT CASE WHEN NEW.balance_delta_amount < 0 AND
+    COALESCE((SELECT SUM(t.balance_delta_amount) FROM savings_ledger_transactions t WHERE t.savings_account_id=NEW.savings_account_id),0) + NEW.balance_delta_amount < 0
+    THEN RAISE(ABORT, 'SAVINGS_NEGATIVE_BALANCE_FORBIDDEN') END;
+
+  SELECT CASE WHEN NEW.transaction_type='WITHDRAWAL' AND EXISTS (
     SELECT 1 FROM savings_ledger_accounts a
     WHERE a.id=NEW.savings_account_id
       AND COALESCE((SELECT SUM(t.balance_delta_amount) FROM savings_ledger_transactions t WHERE t.savings_account_id=NEW.savings_account_id),0) + NEW.balance_delta_amount < a.min_balance_amount
