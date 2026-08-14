@@ -44,9 +44,10 @@ const groups: Array<{ section: string; items: NavItem[] }> = [
     { label: "Produk Simpanan", href: "/savings/products", permission: "SAVINGS_PRODUCT_VIEW", badge: "Config" },
     { label: "Rekening Simpanan", href: "/savings/accounts", permission: "SAVINGS_ACCOUNT_VIEW" },
     { label: "Laporan & Integritas", href: "/savings/reports", anyPermissions: ["SAVINGS_ACCOUNT_VIEW","SAVINGS_TRANSACTION_VIEW"] },
+    { label: "Produk Pinjaman", href: "/loans/products", permission: "LOAN_PRODUCT_VIEW", badge: "Config" },
   ]},
   { section: "Kontrol", items: [
-    { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","SAVINGS_PRODUCT_APPROVE","SAVINGS_ACCOUNT_APPROVE","ORG_MANAGE"] },
+    { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","SAVINGS_PRODUCT_APPROVE","SAVINGS_ACCOUNT_APPROVE","LOAN_PRODUCT_APPROVE","ORG_MANAGE"] },
     { label: "Laporan Penjualan", href: "/reports/daily-sales", permission: "REPORT_VIEW" },
     { label: "Kapasitas Sistem", href: "/capacity", permission: "ORG_MANAGE", badge: "Zero Cost" },
     { label: "Backup & Pemulihan", href: "/capacity/recovery", permission: "ORG_MANAGE" },
