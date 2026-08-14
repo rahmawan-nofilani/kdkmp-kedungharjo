@@ -25,6 +25,7 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
     ["V8", "Jurnal Terkontrol", status.features.controlledJournal],
     ["V9", "Aset & Penyusutan", status.features.assetDepreciation],
     ["V10", "Kapasitas Sistem", status.features.systemCapacity],
+    ["V11", "Ledger Simpanan", status.features.savingsLedger],
   ] as const;
 
   return <main className={styles.page}><section className={styles.card}>
@@ -37,7 +38,7 @@ export default async function DatabaseSetupPage({ searchParams }: PageProps) {
     <div className={styles.steps}><div><b>VERSI</b><span>{status.currentVersion || "Belum ada schema"}</span></div>{rows.map(([code,label,ready])=><div key={code}><b>{code}</b><span>{ready ? `${label} tersedia` : `${label} menunggu upgrade`}</span></div>)}</div>
     {params.status ? <div className={styles.alert}>Proses database selesai. Periksa status CURRENT di atas.</div> : null}
     {params.error ? <div className={`${styles.alert} ${styles.error}`}>Upgrade belum berhasil. {params.detail || "Coba lagi setelah memastikan deployment terbaru aktif."}</div> : null}
-    <div className={styles.actions}>{!status.current ? <form action={initializeD1}><button type="submit" disabled={!status.bound}>Terapkan Upgrade yang Tertunda</button></form> : <Link href="/capacity">Buka Kapasitas Sistem</Link>}<Link href="/capacity">Kapasitas Sistem</Link><Link href="/dashboard">Dashboard</Link></div>
+    <div className={styles.actions}>{!status.current ? <form action={initializeD1}><button type="submit" disabled={!status.bound}>Terapkan Upgrade yang Tertunda</button></form> : <Link href="/savings/accounts">Buka Rekening Simpanan</Link>}<Link href="/capacity">Kapasitas Sistem</Link><Link href="/dashboard">Dashboard</Link></div>
     <p className={styles.note}>Hanya Manager dengan ORG_MANAGE yang dapat menjalankan upgrade.</p>
   </section></main>;
 }

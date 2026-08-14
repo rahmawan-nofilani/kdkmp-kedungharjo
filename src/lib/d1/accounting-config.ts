@@ -39,6 +39,8 @@ export const ACCOUNTING_EVENTS = [
   { code: "SUPPLIER_INVOICE_APPROVED", name: "Invoice supplier approved", debit: "2-1500", credit: "2-1000" },
   { code: "SUPPLIER_PAYMENT_BANK", name: "Pembayaran supplier via bank", debit: "2-1000", credit: "1-1100" },
   { code: "SUPPLIER_PAYMENT_CASH", name: "Pembayaran supplier via kas", debit: "2-1000", credit: "1-1000" },
+  { code: "SAVINGS_DEPOSIT", name: "Setoran simpanan anggota", debit: "1-1000", credit: "2-2000" },
+  { code: "SAVINGS_WITHDRAWAL", name: "Penarikan simpanan anggota", debit: "2-2000", credit: "1-1000" },
 ] as const;
 
 const FOUNDATION_ACCOUNTS = [
@@ -47,6 +49,7 @@ const FOUNDATION_ACCOUNTS = [
   { code: "1-1300", name: "Persediaan", type: "ASSET", normal: "DEBIT" },
   { code: "2-1000", name: "Hutang Supplier", type: "LIABILITY", normal: "CREDIT" },
   { code: "2-1500", name: "GRNI / Barang diterima belum ditagih", type: "LIABILITY", normal: "CREDIT" },
+  { code: "2-2000", name: "Simpanan Anggota", type: "LIABILITY", normal: "CREDIT" },
   { code: "3-1000", name: "Modal / Ekuitas Dasar", type: "EQUITY", normal: "CREDIT" },
   { code: "4-1000", name: "Pendapatan Penjualan", type: "REVENUE", normal: "CREDIT" },
   { code: "5-1000", name: "Harga Pokok Penjualan", type: "EXPENSE", normal: "DEBIT" },
@@ -217,8 +220,10 @@ export async function createMappingDraft(input: {
 }) {
   await ensureAccountingFoundation(input.organizationId);
   const db = getD1();
-  const event = ACCOUNTING_EVENTS.find((item) => item.code === input.eventCode);
-  if (!event) throw new Error("Event accounting tidak dikenal.");
+  const eventCode = input.eventCode.trim().toUpperCase();
+  const standardEvent = ACCOUNTING_EVENTS.find((item) => item.code === eventCode);
+  const savingsEvent = /^SAVINGS_(DEPOSIT|WITHDRAWAL)(_[A-Z0-9_]{2,40})?$/.test(eventCode);
+  if (!standardEvent && !savingsEvent) throw new Error("Event accounting tidak dikenal.");
   if (input.debitAccountId === input.creditAccountId) throw new Error("Debit dan kredit tidak boleh memakai akun yang sama.");
   const note = input.changeNote.trim();
   if (note.length < 8 || note.length > 240) throw new Error("Catatan perubahan wajib 8–240 karakter.");
@@ -228,11 +233,11 @@ export async function createMappingDraft(input: {
       .bind(input.debitAccountId, input.organizationId).first<{ id: string }>(),
     db.prepare("SELECT id FROM chart_of_accounts WHERE id=? AND organization_id=? AND status='ACTIVE' LIMIT 1")
       .bind(input.creditAccountId, input.organizationId).first<{ id: string }>(),
-    db.prepare("SELECT id FROM accounting_mappings WHERE organization_id=? AND event_code=? LIMIT 1")
-      .bind(input.organizationId, event.code).first<{ id: string }>(),
+    db.prepare("SELECT id,event_name FROM accounting_mappings WHERE organization_id=? AND event_code=? LIMIT 1")
+      .bind(input.organizationId, eventCode).first<{ id: string; event_name: string }>(),
   ]);
   if (!debit || !credit) throw new Error("Akun debit/kredit harus ACTIVE dan berasal dari organisasi yang sama.");
-  if (!mapping) throw new Error("Accounting mapping foundation belum tersedia.");
+  if (!mapping) throw new Error(savingsEvent ? "Mapping produk belum terdaftar. Buka rekening ACTIVE ke halaman Saldo & Mutasi terlebih dahulu." : "Accounting mapping foundation belum tersedia.");
 
   const existingDraft = await db.prepare("SELECT id FROM accounting_mapping_versions WHERE mapping_id=? AND status='DRAFT' LIMIT 1")
     .bind(mapping.id).first<{ id: string }>();
@@ -252,7 +257,7 @@ export async function createMappingDraft(input: {
     db.prepare(`INSERT INTO transaction_audit_events
       (id, organization_id, actor_user_id, event_type, entity_type, entity_id, payload_json, created_at)
       VALUES (?, ?, ?, 'ACCOUNTING_MAPPING_DRAFT_CREATED', 'ACCOUNTING_MAPPING_VERSION', ?, ?, ?)`)
-      .bind(crypto.randomUUID(), input.organizationId, input.actorUserId, id, JSON.stringify({ eventCode: event.code, version, note }), now),
+      .bind(crypto.randomUUID(), input.organizationId, input.actorUserId, id, JSON.stringify({ eventCode, eventName: mapping.event_name, version, note }), now),
   ]);
   return id;
 }

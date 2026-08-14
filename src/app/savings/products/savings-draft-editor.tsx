@@ -41,6 +41,13 @@ export function SavingsDraftEditor({productId,version}:{productId:string;version
       <label className={styles.check}><input type="checkbox" name="channel_qris" defaultChecked={version.payment_channels?.includes("QRIS")}/> QRIS — aktif hanya jika integrasi tersedia</label>
     </fieldset>
 
+    <fieldset className={styles.wide}><legend>Mapping akuntansi produk</legend>
+      <p>Gunakan kode standar atau kode khusus produk. Kode khusus akan memiliki mapping sendiri di Pengaturan Akuntansi sehingga akun Simpanan Wajib, Sukarela, Berjangka, dan produk lain dapat dipisahkan.</p>
+      <label>Kode jurnal setoran<input name="deposit_accounting_event_code" required pattern="[A-Z][A-Z0-9_]{2,59}" maxLength={60} defaultValue={s(version,"deposit_accounting_event_code")||"SAVINGS_DEPOSIT"} placeholder="SAVINGS_DEPOSIT"/></label>
+      <label>Kode jurnal penarikan<input name="withdrawal_accounting_event_code" required pattern="[A-Z][A-Z0-9_]{2,59}" maxLength={60} defaultValue={s(version,"withdrawal_accounting_event_code")||"SAVINGS_WITHDRAWAL"} placeholder="SAVINGS_WITHDRAWAL"/></label>
+      <small>Contoh khusus: SAVINGS_DEPOSIT_SUKARELA dan SAVINGS_WITHDRAWAL_SUKARELA. Setelah rekening dibuka, mapping kode tersebut dapat diubah melalui Pengaturan Akuntansi dengan approval.</small>
+    </fieldset>
+
     <label className={styles.wide}>Dasar aturan / regulasi<textarea name="regulatory_basis" rows={3} maxLength={1500} defaultValue={s(version,"regulatory_basis")} placeholder="Keputusan RAT, kebijakan koperasi, atau dasar hukum setelah diverifikasi"/></label>
     <label className={styles.wide}>Ketentuan produk<textarea name="terms_text" rows={5} maxLength={5000} defaultValue={s(version,"terms_text")}/></label>
     <label className={styles.wide}>Catatan perubahan<textarea name="change_note" rows={2} maxLength={500} defaultValue={s(version,"change_note")}/></label>
