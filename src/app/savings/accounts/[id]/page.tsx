@@ -1,0 +1,81 @@
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { getAccessContext } from "@/lib/access/context";
+import { createClient } from "@/lib/supabase/server";
+import { getD1SchemaStatus } from "@/lib/d1/context";
+import { getOpenShift } from "@/lib/d1/teller";
+import { listTreasuryAccounts } from "@/lib/d1/treasury";
+import { getSavingsLedgerAccount, listSavingsTransactions, type SavingsRuleSnapshot } from "@/lib/d1/savings-ledger";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { depositSavingsAction, reverseSavingsAction, withdrawSavingsAction } from "../transaction-actions";
+import styles from "./ledger.module.css";
+
+export const dynamic="force-dynamic";
+type Props={params:Promise<{id:string}>;searchParams:Promise<{status?:string;error?:string}>};
+function money(v:unknown){return new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(v||0));}
+function when(v:string){return new Date(v).toLocaleString("id-ID",{timeZone:"Asia/Jakarta",dateStyle:"medium",timeStyle:"short"});}
+function errorText(code?:string){const m:Record<string,string>={invalid:"Data transaksi belum lengkap.",shift:"Transaksi tunai membutuhkan shift kasir yang sedang OPEN.",minimum:"Nominal lebih kecil dari minimum produk.",balance:"Penarikan akan melewati saldo minimum yang diwajibkan.",maximum:"Setoran akan melewati saldo maksimum produk.",locked:"Rekening masih dalam masa kunci.",maturity:"Produk belum jatuh tempo dan tidak mengizinkan penarikan lebih awal.","deposit-disabled":"Produk ini tidak menerima setoran.","withdraw-disabled":"Produk ini tidak mengizinkan penarikan.",mapping:"Mapping akuntansi simpanan belum siap/disetujui.",account:"Rekening belum ACTIVE atau tidak valid.",period:"Periode akuntansi untuk tanggal ini sudah ditutup/dikunci.",reversed:"Transaksi tersebut sudah dibalik.",reason:"Alasan pembalikan minimal 8 karakter.",save:"Transaksi belum dapat dicatat."};return code?m[code]||m.save:null;}
+
+export default async function SavingsAccountDetail({params,searchParams}:Props){
+  const access=await getAccessContext();if(!access)redirect("/login");
+  if(!access.permissions.includes("SAVINGS_ACCOUNT_VIEW")||!access.permissions.includes("SAVINGS_TX_VIEW"))redirect("/dashboard");
+  const schema=await getD1SchemaStatus();if(!schema.features.savingsLedger)redirect("/setup/database");
+  const [{id},query]=await Promise.all([params,searchParams]);
+  const supabase=await createClient();
+  const {data:account,error}=await supabase.from("savings_accounts")
+    .select("id,organization_id,member_id,product_id,product_version_id,account_number,status,rule_snapshot,opened_by,opened_at")
+    .eq("id",id).eq("organization_id",access.organization.id).maybeSingle();
+  if(error||!account||account.status!=="ACTIVE")notFound();
+  const rules=(account.rule_snapshot||{}) as SavingsRuleSnapshot;
+  const memberPromise=access.permissions.includes("MEMBER_VIEW")?supabase.from("members").select("member_number,full_name").eq("id",account.member_id).maybeSingle():Promise.resolve({data:null,error:null});
+  const [ledger,transactions,treasury,shift,memberResult]=await Promise.all([
+    getSavingsLedgerAccount(access.organization.id,id),listSavingsTransactions(access.organization.id,id,120),listTreasuryAccounts(access.organization.id),getOpenShift(access.organization.id,access.user.id),memberPromise,
+  ]);
+  const balance=ledger?.balance_amount??0;const activeTreasury=treasury.filter(t=>t.status==="ACTIVE");
+  const canDeposit=access.permissions.includes("SAVINGS_DEPOSIT");const canWithdraw=access.permissions.includes("SAVINGS_WITHDRAW");const canReverse=access.permissions.includes("SAVINGS_REVERSE");
+  const reversedOriginals=new Set(transactions.filter(t=>t.transaction_type==="REVERSAL"&&t.original_transaction_id).map(t=>String(t.original_transaction_id)));
+  const statusText=query.status==="deposited"?"Setoran berhasil dicatat.":query.status==="withdrawn"?"Penarikan berhasil dicatat.":query.status==="reversed"?"Pembalikan transaksi berhasil dicatat.":null;
+  const failure=errorText(query.error);const member=memberResult.data as {member_number?:string;full_name?:string}|null;
+
+  return <section className="workspace"><header className="workspace-header"><div><p className="workspace-kicker">SIMPAN PINJAM · REKENING AKTIF</p><h1>{account.account_number}</h1></div></header>
+    <div className={`workspace-content ${styles.content}`}>
+      <section className={styles.hero}><div><Link href="/savings/accounts">← Daftar Rekening</Link><span>BUKU MUTASI REKENING</span><h2>{String(rules.display_name||rules.product_code||"Produk Simpanan")}</h2><p>{member?.full_name?<><b>{member.full_name}</b> · {member.member_number}</>:"Identitas anggota dibatasi sesuai hak akses."}</p></div><div className={styles.balance}><span>Saldo Saat Ini</span><strong>{money(balance)}</strong><small>dihitung dari seluruh mutasi, tidak dapat diedit manual</small></div></section>
+      {statusText?<div className={styles.success}>{statusText}</div>:null}{failure?<div className={styles.error}>{failure}</div>:null}
+
+      <section className={styles.metrics}>
+        <article><span>Setoran awal minimum</span><strong>{money(rules.min_opening_amount)}</strong></article>
+        <article><span>Setoran minimum</span><strong>{money(rules.min_deposit_amount)}</strong></article>
+        <article><span>Penarikan minimum</span><strong>{money(rules.min_withdrawal_amount)}</strong></article>
+        <article><span>Saldo minimum</span><strong>{money(rules.min_balance_amount)}</strong></article>
+      </section>
+
+      <section className={styles.transactionGrid}>
+        {canDeposit?<article className={styles.transactionCard}><span>SETORAN</span><h3>Tambah saldo rekening</h3><p>Untuk tunai, kasir harus memiliki shift OPEN. Transfer bank tidak menambah kas fisik shift.</p><form action={depositSavingsAction}>
+          <input type="hidden" name="account_id" value={id}/><input type="hidden" name="idempotency_key" value={`sav-dep-${crypto.randomUUID()}`}/>
+          <label>Nominal<input name="amount" inputMode="numeric" required min={1} placeholder="contoh: 50000"/></label>
+          <label>Cara penerimaan<select name="payment_method" defaultValue="CASH"><option value="CASH">Tunai</option><option value="BANK_TRANSFER">Transfer Bank</option></select></label>
+          <label>Masuk ke Kas/Bank<select name="treasury_account_id" required defaultValue=""><option value="" disabled>Pilih Kas/Bank</option>{activeTreasury.map(t=><option key={t.id} value={t.id}>{t.account_type==="CASH"?"Kas":"Bank"} · {t.name}</option>)}</select></label>
+          <label>Referensi opsional<input name="reference_number" maxLength={80} placeholder="nomor transfer / bukti"/></label><label>Catatan<input name="note" maxLength={160} placeholder="opsional"/></label>
+          <PendingSubmitButton pendingLabel="Mencatat setoran…">Catat Setoran</PendingSubmitButton>{!shift?<small className={styles.hint}>Shift Anda belum OPEN. Pilih Transfer Bank atau buka shift sebelum transaksi Tunai.</small>:<small className={styles.hint}>Shift tunai aktif.</small>}
+        </form></article>:null}
+
+        {canWithdraw?<article className={styles.transactionCard}><span>PENARIKAN</span><h3>Kurangi saldo rekening</h3><p>Sistem memeriksa saldo minimum, masa kunci, jatuh tempo, serta aturan penarikan produk.</p><form action={withdrawSavingsAction}>
+          <input type="hidden" name="account_id" value={id}/><input type="hidden" name="idempotency_key" value={`sav-wdr-${crypto.randomUUID()}`}/>
+          <label>Nominal<input name="amount" inputMode="numeric" required min={1} placeholder="contoh: 25000"/></label>
+          <label>Cara pembayaran<select name="payment_method" defaultValue="CASH"><option value="CASH">Tunai</option><option value="BANK_TRANSFER">Transfer Bank</option></select></label>
+          <label>Keluar dari Kas/Bank<select name="treasury_account_id" required defaultValue=""><option value="" disabled>Pilih Kas/Bank</option>{activeTreasury.map(t=><option key={t.id} value={t.id}>{t.account_type==="CASH"?"Kas":"Bank"} · {t.name}</option>)}</select></label>
+          <label>Referensi opsional<input name="reference_number" maxLength={80} placeholder="nomor transfer / bukti"/></label><label>Catatan<input name="note" maxLength={160} placeholder="opsional"/></label>
+          <PendingSubmitButton pendingLabel="Mencatat penarikan…">Catat Penarikan</PendingSubmitButton>
+        </form></article>:null}
+      </section>
+
+      <section className={styles.panel}><div className={styles.panelHead}><div><span>BUKU MUTASI</span><h3>Riwayat transaksi</h3></div><b>{transactions.length}</b></div>
+        {transactions.length?<div className={styles.tableWrap}><table><thead><tr><th>Waktu</th><th>No. Transaksi</th><th>Jenis</th><th>Kas/Bank</th><th>Masuk</th><th>Keluar</th><th>Jurnal</th><th>Kontrol</th></tr></thead><tbody>{transactions.map(t=>{
+          const incoming=t.balance_delta_amount>0;const reversed=reversedOriginals.has(t.id);const cashNeedsShift=t.payment_method==="CASH"&&!shift;
+          return <tr key={t.id}><td>{when(t.occurred_at)}</td><td><strong>{t.transaction_number}</strong><small>{t.reference_number||"tanpa referensi"}</small></td><td><span className={`${styles.badge} ${t.transaction_type==="REVERSAL"?styles.reverse:t.transaction_type==="DEPOSIT"?styles.deposit:styles.withdraw}`}>{t.transaction_type==="DEPOSIT"?"SETORAN":t.transaction_type==="WITHDRAWAL"?"PENARIKAN":"PEMBALIKAN"}</span></td><td>{t.treasury_name}<small>{t.payment_method==="CASH"?"Tunai":"Transfer Bank"}</small></td><td className={styles.in}>{incoming?money(Math.abs(t.balance_delta_amount)):"—"}</td><td className={styles.out}>{!incoming?money(Math.abs(t.balance_delta_amount)):"—"}</td><td>{t.journal_number}</td><td>{canReverse&&t.transaction_type!=="REVERSAL"&&!reversed?<form action={reverseSavingsAction} className={styles.reverseForm}><input type="hidden" name="account_id" value={id}/><input type="hidden" name="transaction_id" value={t.id}/><input type="hidden" name="idempotency_key" value={`sav-rev-${t.id}-${crypto.randomUUID()}`}/><input name="reason" required minLength={8} maxLength={240} placeholder="Alasan koreksi"/><PendingSubmitButton disabled={cashNeedsShift} pendingLabel="Membalik…">Balik Transaksi</PendingSubmitButton>{cashNeedsShift?<small>Buka shift untuk membalik transaksi tunai.</small>:null}</form>:reversed?<span className={styles.done}>SUDAH DIBALIK</span>:"—"}</td></tr>;
+        })}</tbody></table></div>:<div className={styles.empty}>Belum ada mutasi. Saldo rekening masih Rp0.</div>}
+      </section>
+
+      <section className={styles.notice}><strong>Pengaman Phase 4C</strong><p>Saldo dihitung dari mutasi D1. Transaksi asli tidak dihapus atau diedit; koreksi menggunakan Pembalikan. Pembayaran belanja POS dari simpanan masih NONAKTIF.</p></section>
+    </div></section>;
+}
