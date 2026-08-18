@@ -40,7 +40,6 @@ jobs:
         shell: bash
         run: |
           required=(
-            CLOUDFLARE_ACCOUNT_ID
             CLOUDFLARE_API_TOKEN
             CLOUDFLARE_D1_DATABASE_ID
           )
@@ -55,35 +54,77 @@ jobs:
             exit 1
           fi
 
-      - name: Resolve Cloudflare production metadata
+      - name: Resolve Cloudflare account, D1, and production URL
         shell: bash
         run: |
-          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
-          curl --fail --show-error --silent "${auth[@]}" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$CLOUDFLARE_D1_DATABASE_ID" \
-            -o /tmp/d1-meta.json
-          curl --fail --show-error --silent "${auth[@]}" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
-            -o /tmp/workers-subdomain.json
-
           node <<'NODE'
           const fs = require('fs');
-          const d1 = JSON.parse(fs.readFileSync('/tmp/d1-meta.json', 'utf8'));
-          const workers = JSON.parse(fs.readFileSync('/tmp/workers-subdomain.json', 'utf8'));
-          if (!d1.success || !d1.result?.name) {
-            console.error('Cloudflare D1 metadata could not be resolved for the supplied database ID.');
-            process.exit(1);
+          const token = process.env.CLOUDFLARE_API_TOKEN;
+          const databaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
+          const explicitAccountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+          const headers = { Authorization: `Bearer ${token}` };
+
+          async function cloudflare(path) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, { headers });
+            let body;
+            try { body = await response.json(); } catch { body = null; }
+            return { response, body };
           }
-          if (!workers.success || !workers.result?.subdomain) {
-            console.error('Cloudflare Workers account subdomain could not be resolved.');
-            process.exit(1);
+
+          async function getD1(accountId) {
+            const { response, body } = await cloudflare(`/accounts/${accountId}/d1/database/${databaseId}`);
+            if (!response.ok || !body?.success || !body.result?.name) return null;
+            return body.result;
           }
-          const workerName = process.env.WORKER_NAME;
-          const productionUrl = `https://${workerName}.${workers.result.subdomain}.workers.dev`;
-          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_D1_DATABASE_NAME=${d1.result.name}\n`);
-          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_PRODUCTION_URL=${productionUrl}\n`);
-          console.log(`Resolved D1 database: ${d1.result.name}`);
-          console.log(`Resolved production URL: ${productionUrl}`);
+
+          async function resolveAccountId() {
+            if (explicitAccountId) {
+              const d1 = await getD1(explicitAccountId);
+              if (!d1) throw new Error('Optional CLOUDFLARE_ACCOUNT_ID does not own the supplied D1 database ID.');
+              return { accountId: explicitAccountId, d1 };
+            }
+
+            const accounts = [];
+            let page = 1;
+            while (true) {
+              const { response, body } = await cloudflare(`/accounts?page=${page}&per_page=50`);
+              if (!response.ok || !body?.success || !Array.isArray(body.result)) {
+                throw new Error('Could not list Cloudflare accounts with this API token. Add optional CLOUDFLARE_ACCOUNT_ID if the token cannot list accounts.');
+              }
+              accounts.push(...body.result);
+              const totalPages = Math.max(1, Math.ceil((body.result_info?.total_count ?? accounts.length) / 50));
+              if (page >= totalPages) break;
+              page += 1;
+            }
+
+            const matches = [];
+            for (const account of accounts) {
+              const d1 = await getD1(account.id);
+              if (d1) matches.push({ accountId: account.id, d1 });
+            }
+            if (matches.length !== 1) {
+              throw new Error(`Expected exactly one accessible account to own the supplied D1 database ID; found ${matches.length}.`);
+            }
+            return matches[0];
+          }
+
+          (async () => {
+            const { accountId, d1 } = await resolveAccountId();
+            const { response, body } = await cloudflare(`/accounts/${accountId}/workers/subdomain`);
+            if (!response.ok || !body?.success || !body.result?.subdomain) {
+              throw new Error('Cloudflare Workers account subdomain could not be resolved.');
+            }
+            const productionUrl = `https://${process.env.WORKER_NAME}.${body.result.subdomain}.workers.dev`;
+            fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_D1_DATABASE_NAME=${d1.name}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_PRODUCTION_URL=${productionUrl}\n`);
+            console.log(`Resolved Cloudflare account: ${accountId}`);
+            console.log(`Resolved D1 database: ${d1.name}`);
+            console.log(`Resolved production URL: ${productionUrl}`);
+          })().catch((error) => {
+            console.error(error.message || error);
+            process.exit(1);
+          });
           NODE
 
       - name: Install dependencies
@@ -165,4 +206,4 @@ jobs:
 
       - name: Remove generated production files
         if: always()
-        run: rm -f wrangler.production.json /tmp/kdkmp-health.json /tmp/d1-meta.json /tmp/workers-subdomain.json /tmp/worker-subdomain-status.json
+        run: rm -f wrangler.production.json /tmp/kdkmp-health.json /tmp/worker-subdomain-status.json
