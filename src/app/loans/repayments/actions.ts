@@ -35,6 +35,7 @@ async function requireAccess(permission: string) {
 
 function refresh(repaymentId?: string, contractId?: string) {
   revalidatePath("/loans/repayments");
+  revalidatePath("/loans/penalties");
   revalidatePath("/loans/contracts");
   revalidatePath("/finance");
   revalidatePath("/finance/treasury");
@@ -46,8 +47,9 @@ function refresh(repaymentId?: string, contractId?: string) {
 function rpcError(message?: string) {
   const value = String(message || "");
   if (value.includes("CONTRACT_NOT_ACTIVE")) return "contract";
+  if (value.includes("WAIVER_PENDING")) return "waiver";
   if (value.includes("PENDING_EXISTS") || value.includes("loan_repayments_contract_open_uq")) return "pending";
-  if (value.includes("PENALTY_ENGINE_REQUIRED")) return "penalty";
+  if (value.includes("PENALTY_STALE")) return "penalty";
   if (value.includes("EXCEEDS_OUTSTANDING")) return "overpay";
   if (value.includes("AMOUNT_INVALID")) return "amount";
   if (value.includes("CHANNEL_INVALID")) return "channel";
