@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ status?: string; error?: string }>;
+  searchParams: Promise<{ status?: string; error?: string; duplicate?: string }>;
 };
 
 function rupiah(value: number) {
@@ -50,7 +50,9 @@ export default async function SaleReceiptPage({ params, searchParams }: PageProp
     if (data) memberName = `${data.member_number} · ${data.full_name}`;
   }
 
-  const canVoid = access.permissions.includes("ORG_MANAGE") && receipt.sale.status === "COMMITTED";
+  const hasVoidPermission = access.permissions.includes("POS_VOID");
+  const isDifferentChecker = receipt.sale.teller_user_id !== access.user.id;
+  const canVoid = hasVoidPermission && isDifferentChecker && receipt.sale.status === "COMMITTED";
 
   return (
     <main className={styles.page}>
@@ -67,7 +69,7 @@ export default async function SaleReceiptPage({ params, searchParams }: PageProp
       </header>
 
       <div className={styles.content}>
-        {query.status === "voided" ? <div className={styles.success}>Transaksi berhasil di-void dan reversal sudah diposting.</div> : null}
+        {query.status === "voided" ? <div className={styles.success}>{query.duplicate ? "Void sebelumnya sudah terposting; hasil yang sama direkonsiliasi tanpa posting ganda." : "Transaksi berhasil di-void dan reversal sudah diposting."}</div> : null}
         {query.error ? <div className={styles.error}>{query.error}</div> : null}
 
         <section className={styles.receiptCard}>
@@ -155,7 +157,7 @@ export default async function SaleReceiptPage({ params, searchParams }: PageProp
           <div className={styles.printAction}><PrintButton /></div>
           {canVoid ? (
             <details className={styles.voidPanel}>
-              <summary>Void transaksi — Manager</summary>
+              <summary>Void transaksi — checker</summary>
               <form action={voidSaleAction}>
                 <input type="hidden" name="saleId" value={receipt.sale.id} />
                 <label>
@@ -164,8 +166,10 @@ export default async function SaleReceiptPage({ params, searchParams }: PageProp
                 </label>
                 <button type="submit">Konfirmasi Void & Posting Reversal</button>
               </form>
-              <p>Development control: hanya ORG_MANAGE. Maker-checker approval penuh akan dipasang pada approval engine.</p>
+              <p>Kontrol produksi: hanya role dengan POS_VOID, teller transaksi asal tidak boleh menjadi checker, shift asal harus masih OPEN, saldo kas harus cukup, dan retry tidak membuat reversal ganda.</p>
             </details>
+          ) : receipt.sale.status === "COMMITTED" && hasVoidPermission && !isDifferentChecker ? (
+            <div className={styles.voidInfo}><strong>MAKER-CHECKER</strong><span>Transaksi ini dibuat oleh Anda. Minta pengguna berwenang lain melakukan void.</span></div>
           ) : null}
         </section>
       </div>
