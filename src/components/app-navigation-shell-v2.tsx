@@ -51,6 +51,7 @@ const groups: Array<{ section: string; items: NavItem[] }> = [
     { label: "Angsuran Pinjaman", href: "/loans/repayments", permission: "LOAN_REPAYMENT_VIEW" },
     { label: "Denda & Waiver", href: "/loans/penalties", permission: "LOAN_PENALTY_VIEW" },
     { label: "Koreksi & Pelunasan", href: "/loans/corrections", anyPermissions: ["LOAN_CORRECTION_VIEW","LOAN_REPAYMENT_POST"] },
+    { label: "Accounting & Rekonsiliasi", href: "/loans/reports", permission: "LOAN_REPORT_VIEW" },
   ]},
   { section: "Kontrol", items: [
     { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","SAVINGS_PRODUCT_APPROVE","SAVINGS_ACCOUNT_APPROVE","LOAN_PRODUCT_APPROVE","LOAN_APPLICATION_APPROVE","LOAN_DISBURSEMENT_APPROVE","LOAN_PENALTY_WAIVE_APPROVE","LOAN_CORRECTION_APPROVE","ORG_MANAGE"] },
