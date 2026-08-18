@@ -39,10 +39,10 @@ export default async function MembersPage({searchParams}:PageProps){
     {failure?<Alert tone="danger" title="Data anggota belum siap">{failure}</Alert>:null}
 
     <section className={styles.statGrid} aria-label="Ringkasan anggota">
-      <Card density="compact"><span>Total anggota</span><strong>{counts.total}</strong><small>Semua status</small></Card>
-      <Card density="compact"><span>Aktif</span><strong>{counts.active}</strong><small>Siap digunakan operasional</small></Card>
-      <Card density="compact"><span>Pending</span><strong>{counts.pending}</strong><small>Menunggu aktivasi</small></Card>
-      <Card density="compact"><span>Suspended</span><strong>{counts.suspended}</strong><small>Akses layanan dibatasi</small></Card>
+      <Card density="compact" className={styles.statCard}><span>Total anggota</span><strong>{counts.total}</strong><small>Semua status</small></Card>
+      <Card density="compact" className={styles.statCard}><span>Aktif</span><strong>{counts.active}</strong><small>Siap digunakan operasional</small></Card>
+      <Card density="compact" className={styles.statCard}><span>Pending</span><strong>{counts.pending}</strong><small>Menunggu aktivasi</small></Card>
+      <Card density="compact" className={styles.statCard}><span>Suspended</span><strong>{counts.suspended}</strong><small>Akses layanan dibatasi</small></Card>
     </section>
 
     <section className={styles.toolbar}>
