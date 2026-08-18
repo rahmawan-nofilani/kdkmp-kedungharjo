@@ -1,0 +1,105 @@
+name: Production Live Verification
+
+on:
+  workflow_run:
+    workflows: ["Cloudflare Production Deploy"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type VERIFY-KDKMP-PRODUCTION to verify the live site
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  live-verify:
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main') ||
+      (github.event_name == 'workflow_dispatch' &&
+       inputs.confirmation == 'VERIFY-KDKMP-PRODUCTION')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_PRODUCTION_URL: ${{ vars.CLOUDFLARE_PRODUCTION_URL }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate target URL
+        shell: bash
+        run: |
+          if [ -z "$CLOUDFLARE_PRODUCTION_URL" ]; then
+            echo "Missing CLOUDFLARE_PRODUCTION_URL" >&2
+            exit 1
+          fi
+          case "$CLOUDFLARE_PRODUCTION_URL" in
+            https://*) ;;
+            *) echo "Production verification requires HTTPS." >&2; exit 1 ;;
+          esac
+
+      - name: Verify infrastructure health
+        shell: bash
+        run: |
+          base="${CLOUDFLARE_PRODUCTION_URL%/}"
+          curl --fail --show-error --silent --location --retry 5 --retry-delay 3 --max-time 30 "$base/api/health" -o /tmp/health.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const value = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
+          if (value.status !== 'ok' || value.checks?.d1 !== 'ok' || value.checks?.supabase !== 'ok') {
+            console.error('Production health gate failed:', value);
+            process.exit(1);
+          }
+          console.log('D1 + Supabase health PASS');
+          NODE
+
+      - name: Verify public release surface
+        shell: bash
+        run: |
+          base="${CLOUDFLARE_PRODUCTION_URL%/}"
+          curl --fail --show-error --silent --location --retry 3 --max-time 30 "$base/" -o /tmp/home.html
+          curl --fail --show-error --silent --location --retry 3 --max-time 30 "$base/login" -o /tmp/login.html
+          curl --fail --show-error --silent --location --retry 3 --max-time 30 "$base/manifest.webmanifest" -o /tmp/manifest.json
+
+          if grep -Eqi 'PHASE[[:space:]]*0|AKSES[[:space:]]+DEVELOPMENT|Masuk ke Development' /tmp/home.html /tmp/login.html; then
+            echo "Stale development copy detected on production surface." >&2
+            exit 1
+          fi
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const manifest = JSON.parse(fs.readFileSync('/tmp/manifest.json', 'utf8'));
+          if (manifest.display !== 'standalone') throw new Error('PWA manifest display must be standalone');
+          if (manifest.start_url !== '/dashboard') throw new Error('PWA manifest start_url must be /dashboard');
+          if (!Array.isArray(manifest.icons) || manifest.icons.length < 1) throw new Error('PWA manifest icon missing');
+          console.log('Public release surface + PWA manifest PASS');
+          NODE
+
+      - name: Record verification in go-live issue
+        if: success()
+        shell: bash
+        run: |
+          sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Automated production live verification PASS for \`$sha\` at ${CLOUDFLARE_PRODUCTION_URL}: D1+Supabase health, public root/login, stale-development-copy guard, and PWA manifest checks all passed. Authenticated synthetic-data UAT + backup/restore evidence are still required before real-data go-live."
+
+      - name: Verification summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## KDKMP live verification"
+            echo "- URL: ${CLOUDFLARE_PRODUCTION_URL}"
+            echo "- D1 + Supabase health: PASS"
+            echo "- Public root/login: PASS"
+            echo "- Stale development copy: NONE"
+            echo "- PWA manifest: PASS"
+            echo ""
+            echo "Remaining manual gate: authenticated synthetic-data UAT, readiness PASS, and backup/restore evidence."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/health.json /tmp/home.html /tmp/login.html /tmp/manifest.json
