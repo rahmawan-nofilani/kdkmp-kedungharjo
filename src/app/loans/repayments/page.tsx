@@ -31,6 +31,7 @@ function errorMessage(code?: string) {
     treasury: "Kanal pembayaran tidak cocok dengan tipe treasury yang dipilih.",
     contract: "Kontrak harus berstatus DISBURSED untuk menerima angsuran.",
     pending: "Kontrak masih memiliki draft/proses pembayaran yang belum selesai. Selesaikan atau batalkan proses tersebut terlebih dahulu.",
+    penalty: "Kontrak memiliki tunggakan dengan aturan denda aktif. Pembayaran diblok sampai engine perhitungan denda tersedia agar denda tidak terhapus diam-diam.",
     overpay: "Nominal pembayaran melebihi sisa pokok + bunga kontrak.",
     amount: "Nominal pembayaran tidak valid.",
     channel: "Kanal pembayaran tidak diizinkan.",
@@ -102,7 +103,7 @@ export default async function LoanRepaymentsPage({ searchParams }: PageProps) {
             <label>Kas / Bank penerima<select name="treasury_account_id" required defaultValue=""><option value="" disabled>Pilih treasury</option>{treasuryAccounts.map((account)=><option key={account.id} value={account.id}>{account.account_type} · {account.code} · {account.name}</option>)}</select></label>
             <label>Referensi pembayaran<input name="payment_reference" required minLength={3} maxLength={120} placeholder="No. kuitansi / transfer / QRIS" /></label>
             <label>Catatan<input name="request_note" maxLength={500} placeholder="Opsional" /></label>
-            <p className={styles.formNote}>Partial payment diperbolehkan. Overpayment ditolak. Core 4E-5 belum menghitung denda keterlambatan; denda dibangun pada hardening berikutnya.</p>
+            <p className={styles.formNote}>Partial payment diperbolehkan. Overpayment ditolak. Jika produk menetapkan denda dan angsuran sudah lewat grace period, pembayaran diblok sampai engine denda aktif.</p>
             <PendingSubmitButton pendingLabel="Menghitung alokasi…">Buat Draft Pembayaran</PendingSubmitButton>
           </form>:<div className={styles.empty}><strong>Belum ada kontrak/sumber pembayaran yang siap.</strong><p>Butuh kontrak DISBURSED dengan sisa kewajiban dan D1 Kas/Bank CURRENT.</p></div>}
         </details>:null}
@@ -123,7 +124,7 @@ export default async function LoanRepaymentsPage({ searchParams }: PageProps) {
         {repayments.length?<div className={styles.tableWrap}><table><thead><tr><th>No.</th><th>Anggota</th><th>Kanal</th><th>Nominal</th><th>Alokasi</th><th>Status</th><th></th></tr></thead><tbody>{repayments.map((row)=>{const member=memberMap.get(row.member_id);return <tr key={row.id}><td><strong>{row.repayment_number}</strong><small>{new Date(row.posted_at||row.created_at).toLocaleString("id-ID",{timeZone:"Asia/Jakarta"})}</small></td><td><strong>{member?.full_name||"Anggota"}</strong><small>{member?.member_number||"—"}</small></td><td>{row.channel}</td><td><strong>{money(row.total_amount)}</strong><small>{row.payment_reference}</small></td><td><small>Pokok {money(row.principal_amount)}</small><small>Bunga {money(row.interest_amount)}</small></td><td><span className={styles.badge}>{row.status}</span></td><td><Link className={styles.openLink} href={`/loans/repayments/${row.id}`}>Buka</Link></td></tr>;})}</tbody></table></div>:<div className={styles.empty}><strong>Belum ada pembayaran.</strong><p>Kontrak yang sudah DISBURSED dapat menerima pembayaran CASH/BANK_TRANSFER/QRIS sesuai snapshot produk.</p></div>}
       </section>
 
-      <section className={styles.notice}><strong>Batas core 4E-5</strong><p>Denda keterlambatan, waiver, reschedule, koreksi/reversal pembayaran, dan settlement khusus belum diaktifkan. Core ini fokus pada partial/full repayment pokok+bunga yang deterministik dan idempotent.</p></section>
+      <section className={styles.notice}><strong>Batas core 4E-5</strong><p>Denda keterlambatan, waiver, reschedule, koreksi/reversal pembayaran, dan settlement khusus belum diaktifkan. Core ini fokus pada partial/full repayment pokok+bunga yang deterministik dan idempotent; produk berdenda akan diblok pada kondisi overdue sampai engine penalty selesai.</p></section>
     </div>
   </section>;
 }
