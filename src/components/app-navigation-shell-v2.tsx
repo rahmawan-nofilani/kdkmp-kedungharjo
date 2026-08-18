@@ -48,6 +48,7 @@ const groups: Array<{ section: string; items: NavItem[] }> = [
     { label: "Pengajuan Pinjaman", href: "/loans/applications", permission: "LOAN_APPLICATION_VIEW" },
     { label: "Kontrak & Jadwal", href: "/loans/contracts", permission: "LOAN_CONTRACT_VIEW" },
     { label: "Pencairan Pinjaman", href: "/loans/disbursements", permission: "LOAN_DISBURSEMENT_VIEW" },
+    { label: "Angsuran Pinjaman", href: "/loans/repayments", permission: "LOAN_REPAYMENT_VIEW" },
   ]},
   { section: "Kontrol", items: [
     { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","SAVINGS_PRODUCT_APPROVE","SAVINGS_ACCOUNT_APPROVE","LOAN_PRODUCT_APPROVE","LOAN_APPLICATION_APPROVE","LOAN_DISBURSEMENT_APPROVE","ORG_MANAGE"] },
