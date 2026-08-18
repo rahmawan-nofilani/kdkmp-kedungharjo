@@ -56,9 +56,10 @@ const groups: Array<{ section: string; items: NavItem[] }> = [
   { section: "Kontrol", items: [
     { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","SAVINGS_PRODUCT_APPROVE","SAVINGS_ACCOUNT_APPROVE","LOAN_PRODUCT_APPROVE","LOAN_APPLICATION_APPROVE","LOAN_DISBURSEMENT_APPROVE","LOAN_PENALTY_WAIVE_APPROVE","LOAN_CORRECTION_APPROVE","ORG_MANAGE"] },
     { label: "Laporan Penjualan", href: "/reports/daily-sales", permission: "REPORT_VIEW" },
+    { label: "Kesiapan Rilis", href: "/readiness", permission: "ORG_MANAGE", badge: "Go-Live" },
     { label: "Kapasitas Sistem", href: "/capacity", permission: "ORG_MANAGE", badge: "Zero Cost" },
     { label: "Backup & Pemulihan", href: "/capacity/recovery", permission: "ORG_MANAGE" },
-    { label: "Pengaturan Database", href: "/setup/database", permission: "ORG_MANAGE", badge: "Dev" },
+    { label: "Pengaturan Database", href: "/setup/database", permission: "ORG_MANAGE", badge: "System" },
   ]},
 ];
 
