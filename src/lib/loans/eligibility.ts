@@ -13,12 +13,21 @@ export type LoanProductEligibilityConfig = {
   interest_rate_bps: number;
   admin_fee_amount: number;
   provision_fee_bps: number;
+  grace_period_days: number;
+  late_penalty_bps_per_day: number;
+  late_penalty_min_amount: number;
   min_membership_months: number;
   min_savings_balance_amount: number;
   max_active_loans: number;
   max_dsr_bps: number;
   collateral_required: boolean;
   guarantor_required: boolean;
+  repayment_channels: string[];
+  disbursement_channels: string[];
+  disbursement_accounting_event_code: string;
+  principal_accounting_event_code: string;
+  interest_accounting_event_code: string;
+  penalty_accounting_event_code: string;
   effective_from: string | null;
   effective_to: string | null;
 };
@@ -136,12 +145,21 @@ export function evaluateLoanEligibility(input: LoanEligibilityInput) {
       interest_rate_bps: input.product.interest_rate_bps,
       admin_fee_amount: input.product.admin_fee_amount,
       provision_fee_bps: input.product.provision_fee_bps,
+      grace_period_days: input.product.grace_period_days,
+      late_penalty_bps_per_day: input.product.late_penalty_bps_per_day,
+      late_penalty_min_amount: input.product.late_penalty_min_amount,
       min_membership_months: input.product.min_membership_months,
       min_savings_balance_amount: input.product.min_savings_balance_amount,
       max_active_loans: input.product.max_active_loans,
       max_dsr_bps: input.product.max_dsr_bps,
       collateral_required: input.product.collateral_required,
       guarantor_required: input.product.guarantor_required,
+      repayment_channels: Array.isArray(input.product.repayment_channels) ? [...input.product.repayment_channels] : [],
+      disbursement_channels: Array.isArray(input.product.disbursement_channels) ? [...input.product.disbursement_channels] : [],
+      disbursement_accounting_event_code: input.product.disbursement_accounting_event_code,
+      principal_accounting_event_code: input.product.principal_accounting_event_code,
+      interest_accounting_event_code: input.product.interest_accounting_event_code,
+      penalty_accounting_event_code: input.product.penalty_accounting_event_code,
     },
     eligibilitySnapshot: {
       schema_version: "loan_eligibility_v1",
