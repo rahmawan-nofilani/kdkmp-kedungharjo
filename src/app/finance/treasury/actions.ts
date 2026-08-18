@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getAccessContext } from "@/lib/access/context";
-import { getD1SchemaStatus } from "@/lib/d1/context";
+import { getD1, getD1SchemaStatus } from "@/lib/d1/context";
+import { getMonthClosingReadiness } from "@/lib/d1/assets";
 import {
   completeBankReconciliation,
   createAccountingPeriod,
@@ -30,8 +31,45 @@ async function requirePermission(permission: string) {
 
 function refreshFinance() {
   revalidatePath("/finance/treasury");
+  revalidatePath("/finance/closing-readiness");
   revalidatePath("/finance");
   revalidatePath("/dashboard");
+}
+
+async function assertPeriodReadyToClose(organizationId: string, periodId: string) {
+  const db = getD1();
+  const period = await db.prepare(`
+    SELECT id, period_code, period_start, period_end, status
+    FROM accounting_periods
+    WHERE id=? AND organization_id=? LIMIT 1
+  `).bind(periodId, organizationId).first<{
+    id: string;
+    period_code: string;
+    period_start: string;
+    period_end: string;
+    status: string;
+  }>();
+  if (!period) throw new Error("Periode akuntansi tidak ditemukan.");
+  if (period.status !== "OPEN") throw new Error("Hanya periode OPEN yang dapat ditutup.");
+
+  const readiness = await getMonthClosingReadiness(organizationId, period.period_code);
+  const failed = readiness.checks.filter((check) => !check.passed);
+  if (failed.length) {
+    throw new Error(`Closing Readiness belum PASS: ${failed.map((check) => check.label).join(", ")}.`);
+  }
+
+  const endMs = Date.parse(`${period.period_end}T00:00:00+07:00`);
+  if (!Number.isFinite(endMs)) throw new Error("Rentang periode akuntansi tidak valid.");
+  const endExclusive = new Date(endMs + 86_400_000).toISOString();
+  const openShift = await db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM teller_shifts
+    WHERE organization_id=? AND status='OPEN' AND opened_at < ?
+  `).bind(organizationId, endExclusive).first<{ count: number }>();
+  const openCount = Number(openShift?.count ?? 0);
+  if (openCount > 0) {
+    throw new Error(`Masih ada ${openCount} shift teller OPEN yang dimulai sebelum akhir periode. Rekonsiliasi/tutup shift sebelum CLOSE.`);
+  }
 }
 
 export async function createTreasuryAccountAction(formData: FormData) {
@@ -118,10 +156,12 @@ export async function closeAccountingPeriodAction(formData: FormData) {
   const access = await requirePermission("PERIOD_CLOSE");
   let destination = "/finance/treasury?status=period-closed";
   try {
+    const periodId = String(formData.get("periodId") || "");
+    await assertPeriodReadyToClose(access.organization.id, periodId);
     await transitionAccountingPeriod({
       organizationId: access.organization.id,
       actorUserId: access.user.id,
-      periodId: String(formData.get("periodId") || ""),
+      periodId,
       action: "CLOSE",
       note: String(formData.get("note") || ""),
     });
