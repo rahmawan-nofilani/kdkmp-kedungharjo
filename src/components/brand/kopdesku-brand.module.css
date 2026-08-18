@@ -1,0 +1,70 @@
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.mark {
+  flex: 0 0 auto;
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.name {
+  color: inherit;
+  font-family: var(--kdk-font);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -.02em;
+}
+
+.descriptor {
+  color: var(--kdk-text-muted);
+  font-family: var(--kdk-font);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: .08em;
+}
+
+.compact .mark {
+  width: 40px;
+  height: 40px;
+}
+
+.compact .name {
+  font-size: 15px;
+}
+
+.compact .descriptor {
+  font-size: 9px;
+}
+
+.dark .name {
+  color: #F8FAFC;
+}
+
+.dark .descriptor {
+  color: #94A3B8;
+}
+
+.markOnly {
+  display: inline-grid;
+  place-items: center;
+}
+
+.markOnly .mark {
+  margin: 0;
+}
