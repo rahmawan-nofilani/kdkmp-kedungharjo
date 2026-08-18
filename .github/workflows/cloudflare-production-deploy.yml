@@ -22,12 +22,11 @@ jobs:
     environment: production
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://xhjdqmrehpnvvjktwltl.supabase.co
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_dzltH7ywA-wS6WxtiGwM6Q_3wsBzeCr
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_D1_DATABASE_NAME: ${{ vars.CLOUDFLARE_D1_DATABASE_NAME }}
       CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
-      CLOUDFLARE_PRODUCTION_URL: ${{ vars.CLOUDFLARE_PRODUCTION_URL }}
+      WORKER_NAME: kdkmp-kedungharjo
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -37,20 +36,17 @@ jobs:
         with:
           bun-version: 1.2.15
 
-      - name: Validate production configuration
+      - name: Validate production secrets
         shell: bash
         run: |
           required=(
-            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
             CLOUDFLARE_ACCOUNT_ID
             CLOUDFLARE_API_TOKEN
-            CLOUDFLARE_D1_DATABASE_NAME
             CLOUDFLARE_D1_DATABASE_ID
-            CLOUDFLARE_PRODUCTION_URL
           )
           for name in "${required[@]}"; do
             if [ -z "${!name}" ]; then
-              echo "Missing required production setting: $name" >&2
+              echo "Missing required production secret: $name" >&2
               exit 1
             fi
           done
@@ -58,10 +54,37 @@ jobs:
             echo "Unexpected Supabase project URL." >&2
             exit 1
           fi
-          case "$CLOUDFLARE_PRODUCTION_URL" in
-            https://*) ;;
-            *) echo "CLOUDFLARE_PRODUCTION_URL must use HTTPS." >&2; exit 1 ;;
-          esac
+
+      - name: Resolve Cloudflare production metadata
+        shell: bash
+        run: |
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+          curl --fail --show-error --silent "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$CLOUDFLARE_D1_DATABASE_ID" \
+            -o /tmp/d1-meta.json
+          curl --fail --show-error --silent "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+            -o /tmp/workers-subdomain.json
+
+          node <<'NODE'
+          const fs = require('fs');
+          const d1 = JSON.parse(fs.readFileSync('/tmp/d1-meta.json', 'utf8'));
+          const workers = JSON.parse(fs.readFileSync('/tmp/workers-subdomain.json', 'utf8'));
+          if (!d1.success || !d1.result?.name) {
+            console.error('Cloudflare D1 metadata could not be resolved for the supplied database ID.');
+            process.exit(1);
+          }
+          if (!workers.success || !workers.result?.subdomain) {
+            console.error('Cloudflare Workers account subdomain could not be resolved.');
+            process.exit(1);
+          }
+          const workerName = process.env.WORKER_NAME;
+          const productionUrl = `https://${workerName}.${workers.result.subdomain}.workers.dev`;
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_D1_DATABASE_NAME=${d1.result.name}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_PRODUCTION_URL=${productionUrl}\n`);
+          console.log(`Resolved D1 database: ${d1.result.name}`);
+          console.log(`Resolved production URL: ${productionUrl}`);
+          NODE
 
       - name: Install dependencies
         run: bun install
@@ -71,6 +94,9 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          if (config.name !== process.env.WORKER_NAME) {
+            throw new Error(`Unexpected Worker name: ${config.name}`);
+          }
           config.d1_databases = [{
             binding: 'DB',
             database_name: process.env.CLOUDFLARE_D1_DATABASE_NAME,
@@ -94,6 +120,22 @@ jobs:
       - name: Deploy exact main candidate
         run: bunx opennextjs-cloudflare deploy --config=wrangler.production.json
 
+      - name: Verify workers.dev exposure
+        shell: bash
+        run: |
+          curl --fail --show-error --silent \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/subdomain" \
+            -o /tmp/worker-subdomain-status.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const value = JSON.parse(fs.readFileSync('/tmp/worker-subdomain-status.json', 'utf8'));
+          if (!value.success || value.result?.enabled !== true) {
+            console.error('The Worker is not enabled on the account workers.dev subdomain.');
+            process.exit(1);
+          }
+          NODE
+
       - name: Public infrastructure smoke test
         shell: bash
         run: |
@@ -111,14 +153,16 @@ jobs:
             echo "## KDKMP production deployment"
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- URL: ${CLOUDFLARE_PRODUCTION_URL}"
+            echo "- D1: ${CLOUDFLARE_D1_DATABASE_NAME}"
             echo "- OpenNext build: PASS"
             echo "- Wrangler dry run: PASS"
+            echo "- workers.dev exposure: PASS"
             echo "- D1 + Supabase health: PASS"
             echo "- Public login + manifest smoke: PASS"
             echo ""
             echo "Authenticated synthetic-data UAT and backup/restore evidence are still required before real-data go-live."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Remove generated production config
+      - name: Remove generated production files
         if: always()
-        run: rm -f wrangler.production.json /tmp/kdkmp-health.json
+        run: rm -f wrangler.production.json /tmp/kdkmp-health.json /tmp/d1-meta.json /tmp/workers-subdomain.json /tmp/worker-subdomain-status.json
