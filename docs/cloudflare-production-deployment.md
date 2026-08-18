@@ -1,35 +1,72 @@
 # Cloudflare Production Deployment Runbook
 
-This repository currently has CI only (`.github/workflows/application-ci.yml`). Deployment is intentionally not automatic until production credentials/bindings are explicitly available.
+Repository sekarang memiliki dua gate terpisah:
+- `.github/workflows/application-ci.yml` — Typecheck, Next.js build, dan Cloudflare OpenNext worker build.
+- `.github/workflows/cloudflare-production-deploy.yml` — deployment production manual dari `main` saja.
+
+Deployment tidak berjalan otomatis saat merge. Workflow production membutuhkan input konfirmasi `DEPLOY-KDKMP-PRODUCTION` dan GitHub Environment bernama `production`.
+
+## Production settings
+
+Set pada GitHub Environment `production` sebelum menjalankan workflow.
+
+### Secrets
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_D1_DATABASE_ID`
+
+### Variables
+- `CLOUDFLARE_D1_DATABASE_NAME`
+- `CLOUDFLARE_PRODUCTION_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+
+Supabase URL dikunci oleh workflow ke project `kdkmp-kedungharjo`:
+- `https://xhjdqmrehpnvvjktwltl.supabase.co`
+
+Gunakan hanya publishable key aktif milik project tersebut. Jangan pernah memakai service-role/secret key sebagai `NEXT_PUBLIC_*`.
+
+## D1 guardrail
+
+`wrangler.jsonc` di repository hanya menyimpan bentuk dasar Worker. Workflow production membuat `wrangler.production.json` secara sementara dan menambahkan:
+- binding `DB`
+- `database_name` dari `CLOUDFLARE_D1_DATABASE_NAME`
+- `database_id` dari `CLOUDFLARE_D1_DATABASE_ID`
+
+File production hasil generate tidak dikomit dan dihapus pada akhir job. Hal ini mencegah kita menebak ID D1 serta membuat target production eksplisit.
 
 ## Candidate commit
-Deploy only a `main` commit whose Application CI completed successfully and whose `/readiness` blockers have been resolved in the target environment.
+Deploy hanya commit `main` yang Application CI-nya hijau dan `/readiness` pada target environment tidak memiliki blocker teknis yang belum ditangani.
 
-## Pre-deploy
-- Confirm Supabase public URL/key environment variables point to the intended `kdkmp-kedungharjo` project.
-- Confirm Cloudflare D1 binding `DB` points to the intended operational database.
-- Confirm no secret/service-role key is committed to Git.
-- Record D1 + Supabase external backups and a PASSED restore test.
-- Run `bun install` and `bun run typecheck`.
-- Run `bun run build`.
+## Workflow sequence
+1. Checkout exact `main` commit.
+2. Validasi seluruh production settings wajib tersedia.
+3. Install dependencies.
+4. Generate Wrangler production config.
+5. Typecheck.
+6. Next.js build.
+7. `opennextjs-cloudflare build --skipNextBuild` untuk target Workers.
+8. `opennextjs-cloudflare deploy` ke Cloudflare.
+9. Smoke-test publik `/login` dan `/manifest.webmanifest` pada `CLOUDFLARE_PRODUCTION_URL`.
+10. Hapus generated production config.
 
-## Cloudflare build/deploy
-The repository scripts are:
-- preview: `bun run preview`
-- deploy: `bun run deploy`
+## Pre-deploy operational gate
+- Confirm D1 database adalah database operasional KDKMP Kedungharjo yang benar.
+- Record external backup D1 + Supabase.
+- Record restore test PASSED.
+- Gunakan synthetic/UAT data sampai seluruh gate selesai.
+- Jangan deploy jika D1 database tidak bisa diidentifikasi positif.
 
-`wrangler.jsonc` expects Worker `kdkmp-kedungharjo`, OpenNext output `.open-next/worker.js`, assets `.open-next/assets`, and D1 binding `DB`.
-
-Do not deploy if the D1 binding cannot be positively identified. A successful build with the wrong database binding is a NO-GO.
-
-## Post-deploy smoke test
-- Open the live URL from a fresh/incognito browser.
-- Login as SUPER_ADMIN and TELLER dummy users.
-- Open Dashboard, `/readiness`, Inventory, POS, Finance, Savings, Loans, and Approvals.
-- Run one synthetic CASH sale and verify receipt integrity.
-- If safe in the test shift, perform controlled void with a different `POS_VOID` user and verify stock/payment/journal reversal.
-- Confirm `/loans/reports` loads and shows no unexplained reconciliation exception.
-- Confirm no unexpected 404/500 or authentication redirect loop.
+## Post-deploy authenticated smoke test
+Public workflow smoke test tidak memiliki kredensial user. Setelah deployment berhasil:
+- buka URL live dari browser/incognito;
+- login sebagai SUPER_ADMIN dummy dan TELLER dummy;
+- buka Dashboard, `/readiness`, Inventory, POS, Finance, Savings, Loans, dan Approvals;
+- jalankan satu synthetic CASH sale dan periksa receipt integrity;
+- bila aman, controlled void oleh user berbeda yang mempunyai `POS_VOID`;
+- verifikasi stock/payment/journal reversal;
+- verifikasi `/loans/reports` tidak memiliki unexplained reconciliation exception;
+- pastikan tidak ada redirect loop, 404, atau 500;
+- install PWA dari HTTPS URL dan verifikasi launch/login/logout.
 
 ## Go-live
-Real data is permitted only after the live smoke test and the manual UAT runbook are signed off. PWA/Android packaging should be based on this stable web release rather than an unverified pre-production build.
+Real member/financial data hanya boleh digunakan setelah live smoke test dan `docs/production-uat-runbook.md` ditandatangani/diterima secara operasional. Android APK/Capacitor dibuat dari URL web production yang sudah lulus gate tersebut.
