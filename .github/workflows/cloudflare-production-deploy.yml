@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: cloudflare-production
@@ -35,6 +36,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
       WORKER_NAME: kdkmp-kedungharjo
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout exact main candidate
         uses: actions/checkout@v6
@@ -44,6 +46,12 @@ jobs:
       - name: Record release commit
         shell: bash
         run: echo "RELEASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Report deployment start
+        if: github.event_name == 'issue_comment'
+        shell: bash
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Production deployment START for \`$RELEASE_SHA\`. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -218,6 +226,18 @@ jobs:
             echo ""
             echo "Authenticated synthetic-data UAT and backup/restore evidence are still required before real-data go-live."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report deployment pass
+        if: success() && github.event_name == 'issue_comment'
+        shell: bash
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Production deployment PASS for \`$RELEASE_SHA\` at $CLOUDFLARE_PRODUCTION_URL. D1 + Supabase health and public smoke checks passed. Automated live verification follows separately. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Report deployment failure
+        if: failure() && github.event_name == 'issue_comment'
+        shell: bash
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Production deployment FAILED for \`${RELEASE_SHA:-unknown}\`. Inspect the run for the exact failing step: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
       - name: Remove generated production files
         if: always()
