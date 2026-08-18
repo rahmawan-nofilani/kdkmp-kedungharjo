@@ -66,7 +66,7 @@ export function LoginForm() {
       </button>
 
       <p className="form-note">
-        Akses DEVELOPMENT hanya untuk akun yang dibuat oleh administrator. Pendaftaran publik belum dibuka.
+        Akses hanya untuk akun yang dibuat administrator organisasi. Pendaftaran publik tidak dibuka.
       </p>
     </form>
   );

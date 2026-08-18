@@ -17,7 +17,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -46,3 +46,10 @@ jobs:
           fs.writeFileSync('wrangler.ci.json', JSON.stringify(config, null, 2));
           NODE
           bunx opennextjs-cloudflare build --config=wrangler.ci.json --skipNextBuild
+
+      - name: Wrangler production-shape dry run
+        run: bunx wrangler deploy --dry-run --config=wrangler.ci.json
+
+      - name: Remove generated CI config
+        if: always()
+        run: rm -f wrangler.ci.json
