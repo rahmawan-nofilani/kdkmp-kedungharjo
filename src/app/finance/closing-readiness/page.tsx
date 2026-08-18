@@ -37,7 +37,7 @@ export default async function ClosingReadinessPage({ searchParams }:Props) {
         <article><span>Penyusutan belum selesai?</span><p>Hitung lalu minta user berbeda memeriksa dan mencatat penyusutan.</p><Link href="/finance/assets">Buka Aset →</Link></article>
       </section>
 
-      <section className={styles.notice}><strong>Jangan LOCK periode hanya untuk mencoba tombol.</strong><p>LOCK bersifat final. Untuk tahap development, lakukan penutupan periode hanya pada bulan DEMO yang memang sudah dipersiapkan. Jika status checklist sudah SIAP, proses CLOSE/LOCK tetap dilakukan dari menu Kas & Bank sesuai permission dan aturan pembuat–pemeriksa.</p></section>
+      <section className={styles.notice}><strong>Jangan LOCK periode hanya untuk mencoba tombol.</strong><p>LOCK bersifat final. Untuk UAT, gunakan hanya periode dan data sintetis yang memang dipersiapkan. Pada operasional production, CLOSE/LOCK dilakukan hanya setelah checklist SIAP, rekonsiliasi selesai, dan user berbeda menjalankan kontrol pembuat–pemeriksa dari menu Kas & Bank.</p></section>
     </div>
   </main>;
 }
