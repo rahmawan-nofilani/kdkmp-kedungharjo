@@ -47,9 +47,10 @@ const groups: Array<{ section: string; items: NavItem[] }> = [
     { label: "Produk Pinjaman", href: "/loans/products", permission: "LOAN_PRODUCT_VIEW", badge: "Config" },
     { label: "Pengajuan Pinjaman", href: "/loans/applications", permission: "LOAN_APPLICATION_VIEW" },
     { label: "Kontrak & Jadwal", href: "/loans/contracts", permission: "LOAN_CONTRACT_VIEW" },
+    { label: "Pencairan Pinjaman", href: "/loans/disbursements", permission: "LOAN_DISBURSEMENT_VIEW" },
   ]},
   { section: "Kontrol", items: [
-    { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","SAVINGS_PRODUCT_APPROVE","SAVINGS_ACCOUNT_APPROVE","LOAN_PRODUCT_APPROVE","LOAN_APPLICATION_APPROVE","ORG_MANAGE"] },
+    { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","SAVINGS_PRODUCT_APPROVE","SAVINGS_ACCOUNT_APPROVE","LOAN_PRODUCT_APPROVE","LOAN_APPLICATION_APPROVE","LOAN_DISBURSEMENT_APPROVE","ORG_MANAGE"] },
     { label: "Laporan Penjualan", href: "/reports/daily-sales", permission: "REPORT_VIEW" },
     { label: "Kapasitas Sistem", href: "/capacity", permission: "ORG_MANAGE", badge: "Zero Cost" },
     { label: "Backup & Pemulihan", href: "/capacity/recovery", permission: "ORG_MANAGE" },
