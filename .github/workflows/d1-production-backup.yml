@@ -122,6 +122,88 @@ jobs:
           echo "BACKUP_BYTES=$bytes" >> "$GITHUB_ENV"
           echo "Exported $bytes bytes with SHA256 $checksum"
 
+      - name: Verify isolated restore
+        shell: bash
+        run: |
+          python3 <<'PY'
+          import hashlib
+          import os
+          import sqlite3
+          from pathlib import Path
+
+          sql_path = Path(os.environ["BACKUP_FILE"])
+          checksum_path = Path(f"{sql_path}.sha256")
+          expected = checksum_path.read_text(encoding="utf-8").split()[0]
+          actual = hashlib.sha256(sql_path.read_bytes()).hexdigest()
+          if expected != actual or actual != os.environ["BACKUP_CHECKSUM"]:
+              raise SystemExit("Backup checksum verification failed")
+
+          restore_path = Path("/tmp/kdkmp-d1-restore.sqlite")
+          restore_path.unlink(missing_ok=True)
+          connection = sqlite3.connect(restore_path)
+          connection.executescript(sql_path.read_text(encoding="utf-8"))
+          connection.commit()
+
+          integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+          if integrity != "ok":
+              raise SystemExit(f"SQLite integrity_check failed: {integrity}")
+
+          tables = {
+              row[0]
+              for row in connection.execute(
+                  "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+              )
+          }
+          required = {
+              "app_schema_versions",
+              "products",
+              "warehouses",
+              "inventory_movements",
+              "sales",
+              "sale_lines",
+              "journal_entries",
+              "journal_lines",
+              "savings_ledger_accounts",
+              "savings_ledger_transactions",
+              "transaction_audit_events",
+          }
+          missing = sorted(required - tables)
+          if missing:
+              raise SystemExit(f"Restored database is missing critical tables: {', '.join(missing)}")
+
+          organizations = set()
+          for table in ("transaction_audit_events", "products", "warehouses"):
+              organizations.update(
+                  str(row[0])
+                  for row in connection.execute(
+                      f"SELECT DISTINCT organization_id FROM {table} WHERE organization_id IS NOT NULL"
+                  )
+                  if row[0]
+              )
+          if len(organizations) != 1:
+              raise SystemExit(
+                  f"Expected exactly one organization in this single-organization deployment; found {len(organizations)}"
+              )
+          organization_id = next(iter(organizations))
+
+          schema_row = connection.execute(
+              "SELECT version FROM app_schema_versions ORDER BY applied_at DESC LIMIT 1"
+          ).fetchone()
+          schema_version = str(schema_row[0]) if schema_row else "unknown"
+          table_count = len(tables)
+          connection.close()
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"RECOVERY_ORGANIZATION_ID={organization_id}\n")
+              env.write(f"RESTORE_TABLE_COUNT={table_count}\n")
+              env.write(f"RESTORE_SCHEMA_VERSION={schema_version}\n")
+
+          print(
+              f"Isolated restore PASS: checksum={actual}, integrity=ok, "
+              f"tables={table_count}, schema={schema_version}, organization={organization_id}"
+          )
+          PY
+
       - name: Upload D1 backup artifact
         id: upload
         uses: actions/upload-artifact@v4
@@ -131,12 +213,100 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Report backup evidence
+      - name: Generate recovery evidence SQL
         shell: bash
         env:
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
         run: |
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "D1 external backup PASS for source commit \`$BACKUP_SOURCE_SHA\`. Artifact: $ARTIFACT_URL · SHA256: \`$BACKUP_CHECKSUM\` · bytes: \`$BACKUP_BYTES\`. Record this artifact URL/checksum in /capacity/recovery as provider D1, then perform an isolated restore test before real-data go-live. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          python3 <<'PY'
+          import datetime
+          import json
+          import os
+          import uuid
+          from pathlib import Path
+
+          now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+          artifact_url = os.environ["ARTIFACT_URL"]
+          run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          reference = f"github-actions-d1-backup-{os.environ['GITHUB_RUN_ID']}"
+
+          backup_payload = json.dumps(
+              {
+                  "provider": "D1",
+                  "reference": artifact_url,
+                  "checksum": os.environ["BACKUP_CHECKSUM"],
+                  "byteSize": int(os.environ["BACKUP_BYTES"]),
+                  "note": f"Automated D1 export from {os.environ['BACKUP_SOURCE_SHA']} · {run_url}",
+              },
+              separators=(",", ":"),
+          )
+          restore_payload = json.dumps(
+              {
+                  "backupReference": artifact_url,
+                  "status": "PASSED",
+                  "method": "isolated sqlite3 restore + PRAGMA integrity_check",
+                  "note": f"{os.environ['RESTORE_TABLE_COUNT']} tables restored; schema {os.environ['RESTORE_SCHEMA_VERSION']} · {run_url}",
+              },
+              separators=(",", ":"),
+          )
+
+          def sql_string(value: str) -> str:
+              return "'" + value.replace("'", "''") + "'"
+
+          organization_id = os.environ["RECOVERY_ORGANIZATION_ID"]
+          actor = "SYSTEM_RECOVERY_WORKFLOW"
+          statements = [
+              "INSERT INTO transaction_audit_events "
+              "(id,organization_id,actor_user_id,event_type,entity_type,entity_id,payload_json,created_at) VALUES ("
+              + ",".join(
+                  map(
+                      sql_string,
+                      [
+                          str(uuid.uuid4()),
+                          organization_id,
+                          actor,
+                          "BACKUP_EXTERNAL_RECORDED",
+                          "SYSTEM_RECOVERY",
+                          reference,
+                          backup_payload,
+                          now,
+                      ],
+                  )
+              )
+              + ");",
+              "INSERT INTO transaction_audit_events "
+              "(id,organization_id,actor_user_id,event_type,entity_type,entity_id,payload_json,created_at) VALUES ("
+              + ",".join(
+                  map(
+                      sql_string,
+                      [
+                          str(uuid.uuid4()),
+                          organization_id,
+                          actor,
+                          "RESTORE_TEST_RECORDED",
+                          "SYSTEM_RECOVERY",
+                          reference,
+                          restore_payload,
+                          now,
+                      ],
+                  )
+              )
+              + ");",
+          ]
+          Path("/tmp/recovery-evidence.sql").write_text("\n".join(statements) + "\n", encoding="utf-8")
+          PY
+
+      - name: Record verified recovery evidence in production D1
+        shell: bash
+        run: |
+          bunx wrangler d1 execute "$CLOUDFLARE_D1_DATABASE_NAME" --remote --file=/tmp/recovery-evidence.sql --yes
+
+      - name: Report backup and restore evidence
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "D1 backup + isolated restore PASS for source commit \`$BACKUP_SOURCE_SHA\`. Artifact: $ARTIFACT_URL · SHA256: \`$BACKUP_CHECKSUM\` · bytes: \`$BACKUP_BYTES\` · restored tables: \`$RESTORE_TABLE_COUNT\` · schema: \`$RESTORE_SCHEMA_VERSION\`. Verified BACKUP + RESTORE evidence was also recorded automatically in production D1 for /readiness. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
       - name: Backup summary
         shell: bash
@@ -144,17 +314,21 @@ jobs:
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
         run: |
           {
-            echo "## KDKMP D1 production backup"
+            echo "## KDKMP D1 production backup + isolated restore"
             echo "- Source commit: \`$BACKUP_SOURCE_SHA\`"
             echo "- Database: \`$CLOUDFLARE_D1_DATABASE_NAME\`"
             echo "- Artifact: $ARTIFACT_URL"
             echo "- SHA256: \`$BACKUP_CHECKSUM\`"
             echo "- Bytes: \`$BACKUP_BYTES\`"
-            echo "- Retention: 30 days"
+            echo "- Restored tables: \`$RESTORE_TABLE_COUNT\`"
+            echo "- Restored schema: \`$RESTORE_SCHEMA_VERSION\`"
+            echo "- SQLite integrity_check: \`ok\`"
+            echo "- In-app recovery evidence: recorded"
+            echo "- Artifact retention: 30 days"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report backup failure
         if: failure()
         shell: bash
         run: |
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "D1 external backup FAILED for source commit \`${BACKUP_SOURCE_SHA:-unknown}\`. Inspect the exact failing step: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "D1 backup / isolated restore FAILED for source commit \`${BACKUP_SOURCE_SHA:-unknown}\`. No PASS evidence should be accepted until the failing step is corrected. Inspect: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
