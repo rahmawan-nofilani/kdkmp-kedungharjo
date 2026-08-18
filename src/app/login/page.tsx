@@ -1,15 +1,16 @@
 import Link from "next/link";
+import { KopdesKuBrand } from "@/components/brand/kopdesku-brand";
 import { LoginForm } from "./login-form";
 
 export default function LoginPage() {
   return (
     <main className="shell">
       <section className="auth-card">
-        <div className="brand-mark">KD</div>
-        <p className="eyebrow">AKSES KDKMP</p>
-        <h1 className="auth-title">Masuk KDKMP</h1>
+        <KopdesKuBrand dark />
+        <p className="eyebrow">AKSES KDKMP KEDUNGHARJO</p>
+        <h1 className="auth-title">Masuk ke KopdesKu</h1>
         <p className="lead auth-lead">
-          Gunakan akun organisasi yang diberikan administrator. Penggunaan data nyata hanya dilakukan setelah gate go-live dinyatakan lulus.
+          Gunakan akun organisasi yang diberikan administrator. KDKMP Kedungharjo berjalan sebagai organisasi operasional di dalam KopdesKu Integrated Platform.
         </p>
         <LoginForm />
         <Link className="text-link" href="/">← Kembali ke halaman status</Link>
