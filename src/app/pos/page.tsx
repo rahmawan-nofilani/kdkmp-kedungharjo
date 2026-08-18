@@ -111,10 +111,10 @@ export default async function PosPage({ searchParams }: PageProps) {
 
         <section className={styles.heading}>
           <div>
-            <span className={styles.kicker}>PHASE 1.2 · ATOMIC POS</span>
+            <span className={styles.kicker}>ATOMIC POS · CONTROLLED CASH</span>
             <h1>Kasir / Teller Penjualan</h1>
             <p>
-              Mode development: pembayaran tunai. Sale, stok, pembayaran, jurnal, audit, dan idempotency diposting sebagai satu transaction batch.
+              Penjualan tunai, stok, pembayaran, jurnal, audit, dan idempotency diposting dalam satu transaction batch. Koreksi dilakukan lewat controlled void yang memulihkan stok dan membuat jurnal reversal tanpa menghapus histori.
             </p>
           </div>
           <div className={styles.contextCard}>
