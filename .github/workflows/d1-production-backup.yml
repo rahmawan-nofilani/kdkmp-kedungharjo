@@ -1,0 +1,149 @@
+name: D1 Production Backup
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  production-backup:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'BACKUP-KDKMP-D1' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Record backup source commit
+        shell: bash
+        run: echo "BACKUP_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.15
+
+      - name: Validate production secrets
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN" >&2; exit 1; }
+          test -n "$CLOUDFLARE_D1_DATABASE_ID" || { echo "Missing CLOUDFLARE_D1_DATABASE_ID" >&2; exit 1; }
+
+      - name: Resolve Cloudflare account and D1 database
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const token = process.env.CLOUDFLARE_API_TOKEN;
+          const databaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
+          const headers = { Authorization: `Bearer ${token}` };
+
+          async function request(path) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, { headers });
+            let body = null;
+            try { body = await response.json(); } catch {}
+            return { response, body };
+          }
+
+          async function getD1(accountId) {
+            const { response, body } = await request(`/accounts/${accountId}/d1/database/${databaseId}`);
+            if (!response.ok || !body?.success || !body.result?.name) return null;
+            return body.result;
+          }
+
+          (async () => {
+            const accounts = [];
+            let page = 1;
+            while (true) {
+              const { response, body } = await request(`/accounts?page=${page}&per_page=50`);
+              if (!response.ok || !body?.success || !Array.isArray(body.result)) {
+                throw new Error('Could not list Cloudflare accounts with the production token.');
+              }
+              accounts.push(...body.result);
+              const totalPages = Math.max(1, Math.ceil((body.result_info?.total_count ?? accounts.length) / 50));
+              if (page >= totalPages) break;
+              page += 1;
+            }
+
+            const matches = [];
+            for (const account of accounts) {
+              const d1 = await getD1(account.id);
+              if (d1) matches.push({ accountId: account.id, d1 });
+            }
+            if (matches.length !== 1) {
+              throw new Error(`Expected exactly one accessible account to own the configured D1 database; found ${matches.length}.`);
+            }
+
+            const { accountId, d1 } = matches[0];
+            fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_D1_DATABASE_NAME=${d1.name}\n`);
+            console.log(`Resolved D1 database: ${d1.name}`);
+          })().catch((error) => {
+            console.error(error.message || error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Export remote D1 to SQL
+        id: export
+        shell: bash
+        run: |
+          mkdir -p backup
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          file="backup/kdkmp-d1-${stamp}-${GITHUB_RUN_ID}.sql"
+          bunx wrangler d1 export "$CLOUDFLARE_D1_DATABASE_NAME" --remote --skip-confirmation --output="$file"
+          sha256sum "$file" > "$file.sha256"
+          checksum="$(cut -d' ' -f1 "$file.sha256")"
+          bytes="$(stat -c%s "$file")"
+          echo "BACKUP_FILE=$file" >> "$GITHUB_ENV"
+          echo "BACKUP_CHECKSUM=$checksum" >> "$GITHUB_ENV"
+          echo "BACKUP_BYTES=$bytes" >> "$GITHUB_ENV"
+          echo "Exported $bytes bytes with SHA256 $checksum"
+
+      - name: Upload D1 backup artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: kdkmp-d1-production-${{ github.run_id }}
+          path: backup/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report backup evidence
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "D1 external backup PASS for source commit \`$BACKUP_SOURCE_SHA\`. Artifact: $ARTIFACT_URL · SHA256: \`$BACKUP_CHECKSUM\` · bytes: \`$BACKUP_BYTES\`. Record this artifact URL/checksum in /capacity/recovery as provider D1, then perform an isolated restore test before real-data go-live. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Backup summary
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          {
+            echo "## KDKMP D1 production backup"
+            echo "- Source commit: \`$BACKUP_SOURCE_SHA\`"
+            echo "- Database: \`$CLOUDFLARE_D1_DATABASE_NAME\`"
+            echo "- Artifact: $ARTIFACT_URL"
+            echo "- SHA256: \`$BACKUP_CHECKSUM\`"
+            echo "- Bytes: \`$BACKUP_BYTES\`"
+            echo "- Retention: 30 days"
+          } >> "$GITHUB_STEP_SUMMARY"
