@@ -134,13 +134,13 @@ begin
   end if;
 
   v_product_snapshot := coalesce(v_application.product_snapshot,'{}'::jsonb);
-  if v_product_snapshot->>'schema_version' <> 'loan_product_snapshot_v1'
-     or v_product_snapshot->>'product_version_id' <> v_application.product_version_id::text then
+  if coalesce(v_product_snapshot->>'schema_version','') <> 'loan_product_snapshot_v1'
+     or coalesce(v_product_snapshot->>'product_version_id','') <> v_application.product_version_id::text then
     raise exception 'LOAN_CONTRACT_PRODUCT_SNAPSHOT_INVALID';
   end if;
 
-  v_frequency := v_product_snapshot->>'installment_frequency';
-  v_method := v_product_snapshot->>'interest_method';
+  v_frequency := coalesce(v_product_snapshot->>'installment_frequency','');
+  v_method := coalesce(v_product_snapshot->>'interest_method','');
   v_rate := coalesce((v_product_snapshot->>'interest_rate_bps')::integer,0);
   v_admin_fee := coalesce((v_product_snapshot->>'admin_fee_amount')::bigint,0);
   v_provision_bps := coalesce((v_product_snapshot->>'provision_fee_bps')::integer,0);
