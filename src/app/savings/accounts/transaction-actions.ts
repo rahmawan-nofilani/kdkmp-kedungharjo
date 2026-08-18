@@ -6,7 +6,8 @@ import { getAccessContext } from "@/lib/access/context";
 import { createClient } from "@/lib/supabase/server";
 import { getD1SchemaStatus } from "@/lib/d1/context";
 import { getOpenShift } from "@/lib/d1/teller";
-import { postSavingsTransaction, reverseSavingsTransaction, syncSavingsLedgerAccount, type SavingsRuleSnapshot } from "@/lib/d1/savings-ledger";
+import { postSavingsTransaction } from "@/lib/d1/savings-posting";
+import { reverseSavingsTransaction, syncSavingsLedgerAccount, type SavingsRuleSnapshot } from "@/lib/d1/savings-ledger";
 
 function text(formData:FormData,key:string){return String(formData.get(key)||"").trim();}
 function amount(formData:FormData){const n=Number(text(formData,"amount").replace(/[^0-9]/g,""));return Number.isSafeInteger(n)&&n>0?n:0;}

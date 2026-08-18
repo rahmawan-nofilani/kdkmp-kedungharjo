@@ -1,34 +1,17 @@
 import styles from "./kopdesku-brand.module.css";
 
-type Props = {
-  compact?: boolean;
-  dark?: boolean;
-  markOnly?: boolean;
-  className?: string;
-};
+type BrandVariant = "standard" | "mark";
+type Props = { compact?: boolean; inverse?: boolean; markOnly?: boolean; variant?: BrandVariant; className?: string };
 
-const REFERENCE_MARK = "/brand/kopdesku/kopdesku-mark-reference.svg";
+const ASSETS = {
+  standard: "/brand/kopdesku/kopdesku-logo.svg",
+  mark: "/brand/kopdesku/kopdesku-mark.svg",
+  markWhite: "/brand/kopdesku/kopdesku-mark-white.svg",
+} as const;
 
-export function KopdesKuBrand({ compact = false, dark = false, markOnly = false, className = "" }: Props) {
-  const classes = [styles.brand, compact ? styles.compact : "", dark ? styles.dark : "", markOnly ? styles.markOnly : "", className]
-    .filter(Boolean)
-    .join(" ");
-
-  return (
-    <span className={classes} data-brand-asset="reference">
-      <img
-        className={styles.mark}
-        src={REFERENCE_MARK}
-        alt={markOnly ? "KopdesKu" : ""}
-        width={160}
-        height={190}
-      />
-      {!markOnly ? (
-        <span className={styles.copy}>
-          <strong className={styles.name}>KopdesKu</strong>
-          <span className={styles.descriptor}>Integrated Platform</span>
-        </span>
-      ) : null}
-    </span>
-  );
+export function KopdesKuBrand({ compact = false, inverse = false, markOnly = false, variant = "standard", className = "" }: Props) {
+  const resolvedVariant: BrandVariant = markOnly ? "mark" : variant;
+  const src = resolvedVariant === "mark" && inverse ? ASSETS.markWhite : ASSETS[resolvedVariant];
+  const classes = [styles.brand, compact ? styles.compact : "", inverse ? styles.inverse : "", resolvedVariant === "mark" ? styles.markOnly : "", className].filter(Boolean).join(" ");
+  return <span className={classes} data-brand-asset="production-v1.2"><img className={styles.logo} src={src} alt="KopdesKu" width={resolvedVariant === "mark" ? 64 : 220} height={resolvedVariant === "mark" ? 64 : 72} /></span>;
 }

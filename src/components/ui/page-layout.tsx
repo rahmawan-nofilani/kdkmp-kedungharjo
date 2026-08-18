@@ -1,0 +1,4 @@
+import type { ReactNode } from "react";
+import styles from "./ui.module.css";
+export function PageContainer({children,className="",size="wide"}:{children:ReactNode;className?:string;size?:"normal"|"wide"|"full"}){const sizeClass=size==="normal"?styles.pageNormal:size==="full"?styles.pageFull:styles.pageWide;return <div className={`${styles.pageContainer} ${sizeClass} ${className}`.trim()}>{children}</div>}
+export function PageHeader({eyebrow,title,description,actions,breadcrumbs}:{eyebrow?:ReactNode;title:ReactNode;description?:ReactNode;actions?:ReactNode;breadcrumbs?:ReactNode}){return <header className={styles.pageHeader}>{breadcrumbs?<div className={styles.breadcrumbs}>{breadcrumbs}</div>:null}<div className={styles.pageHeaderRow}><div>{eyebrow?<div className={styles.pageEyebrow}>{eyebrow}</div>:null}<h1>{title}</h1>{description?<p>{description}</p>:null}</div>{actions?<div className={styles.pageActions}>{actions}</div>:null}</div></header>}
