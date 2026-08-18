@@ -46,6 +46,7 @@ const groups: Array<{ section: string; items: NavItem[] }> = [
     { label: "Laporan & Integritas", href: "/savings/reports", anyPermissions: ["SAVINGS_ACCOUNT_VIEW","SAVINGS_TRANSACTION_VIEW"] },
     { label: "Produk Pinjaman", href: "/loans/products", permission: "LOAN_PRODUCT_VIEW", badge: "Config" },
     { label: "Pengajuan Pinjaman", href: "/loans/applications", permission: "LOAN_APPLICATION_VIEW" },
+    { label: "Kontrak & Jadwal", href: "/loans/contracts", permission: "LOAN_CONTRACT_VIEW" },
   ]},
   { section: "Kontrol", items: [
     { label: "Pusat Persetujuan", href: "/approvals", anyPermissions: ["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","SAVINGS_PRODUCT_APPROVE","SAVINGS_ACCOUNT_APPROVE","LOAN_PRODUCT_APPROVE","LOAN_APPLICATION_APPROVE","ORG_MANAGE"] },
