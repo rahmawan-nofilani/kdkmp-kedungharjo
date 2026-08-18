@@ -14,6 +14,7 @@ export default async function LoansLayout({ children }: { children: ReactNode })
   const canLoanApplications = access.permissions.includes("LOAN_APPLICATION_VIEW");
   const canLoanContracts = access.permissions.includes("LOAN_CONTRACT_VIEW");
   const canLoanDisbursements = access.permissions.includes("LOAN_DISBURSEMENT_VIEW");
+  const canLoanRepayments = access.permissions.includes("LOAN_REPAYMENT_VIEW");
 
   return <>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "12px 22px", background: "#f4f7f9", borderBottom: "1px solid #dfe5ec" }} aria-label="Navigasi Simpan Pinjam">
@@ -24,6 +25,7 @@ export default async function LoansLayout({ children }: { children: ReactNode })
       {canLoanApplications ? <Link href="/loans/applications" style={linkStyle}>Pengajuan Pinjaman</Link> : null}
       {canLoanContracts ? <Link href="/loans/contracts" style={linkStyle}>Kontrak &amp; Jadwal</Link> : null}
       {canLoanDisbursements ? <Link href="/loans/disbursements" style={linkStyle}>Pencairan Pinjaman</Link> : null}
+      {canLoanRepayments ? <Link href="/loans/repayments" style={linkStyle}>Angsuran Pinjaman</Link> : null}
     </div>
     {children}
   </>;
