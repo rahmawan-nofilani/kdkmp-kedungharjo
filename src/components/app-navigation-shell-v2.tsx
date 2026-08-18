@@ -23,7 +23,7 @@ type NavItem = {
 const groups: Array<{ section: string; items: NavItem[] }> = [
   { section: "Utama", items: [
     { label: "Dashboard", href: "/dashboard", permission: "DASHBOARD_VIEW" },
-    { label: "POS / Kasir", href: "/pos", permission: "POS_ACCESS", badge: "Demo" },
+    { label: "POS / Kasir", href: "/pos", permission: "POS_ACCESS" },
     { label: "Kasir / Shift", href: "/teller", permission: "POS_ACCESS" },
   ]},
   { section: "Operasional", items: [
