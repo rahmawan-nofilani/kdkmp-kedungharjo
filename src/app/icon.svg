@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="KDKMP Kedungharjo">
+  <rect width="512" height="512" rx="112" fill="#0f1f30"/>
+  <rect x="78" y="78" width="356" height="356" rx="82" fill="#ffffff"/>
+  <path d="M154 154h54v79l76-79h69l-91 92 101 112h-72l-67-77-16 16v61h-54V154z" fill="#0f1f30"/>
+  <circle cx="370" cy="370" r="31" fill="#0f1f30"/>
+</svg>
