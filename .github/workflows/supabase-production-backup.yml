@@ -1,0 +1,139 @@
+name: Supabase Production Logical Backup
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  production-backup:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'BACKUP-KDKMP-SUPABASE' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_PROJECT_REF: xhjdqmrehpnvvjktwltl
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Record backup source commit
+        shell: bash
+        run: echo "BACKUP_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Report backup start
+        shell: bash
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Supabase logical backup START for source commit \`$BACKUP_SOURCE_SHA\`. Scope: application \`public\` schema + data; Supabase-managed auth/storage schemas are intentionally excluded. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Validate Supabase database URL
+        shell: bash
+        run: |
+          test -n "$SUPABASE_DB_URL" || { echo "Missing SUPABASE_DB_URL in production Environment secrets" >&2; exit 1; }
+          python3 <<'PY'
+          import os
+          from urllib.parse import urlparse
+
+          value = os.environ["SUPABASE_DB_URL"]
+          parsed = urlparse(value)
+          if parsed.scheme not in {"postgres", "postgresql"}:
+              raise SystemExit("SUPABASE_DB_URL must be a PostgreSQL connection URI")
+          if not parsed.hostname:
+              raise SystemExit("SUPABASE_DB_URL has no database hostname")
+          if os.environ["SUPABASE_PROJECT_REF"] not in value:
+              raise SystemExit("SUPABASE_DB_URL does not reference the locked production project")
+          if not parsed.password:
+              raise SystemExit("SUPABASE_DB_URL must include the database password")
+          print("Supabase database URL shape validated for the locked production project")
+          PY
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v3.0.0
+        with:
+          version: 2.101.0
+
+      - name: Dump public schema and data
+        shell: bash
+        run: |
+          mkdir -p backup
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          schema_file="backup/supabase-public-schema-${stamp}-${GITHUB_RUN_ID}.sql"
+          data_file="backup/supabase-public-data-${stamp}-${GITHUB_RUN_ID}.sql"
+
+          supabase db dump --db-url "$SUPABASE_DB_URL" --schema public --file "$schema_file"
+          supabase db dump --db-url "$SUPABASE_DB_URL" --data-only --schema public --use-copy --file "$data_file"
+
+          test -s "$schema_file" || { echo "Schema dump is empty" >&2; exit 1; }
+          test -s "$data_file" || { echo "Data dump is empty" >&2; exit 1; }
+          grep -q "CREATE TABLE" "$schema_file" || { echo "Schema dump does not contain application tables" >&2; exit 1; }
+
+          sha256sum "$schema_file" "$data_file" > backup/SHA256SUMS
+          bundle_checksum="$(cat "$schema_file" "$data_file" | sha256sum | cut -d' ' -f1)"
+          schema_bytes="$(stat -c%s "$schema_file")"
+          data_bytes="$(stat -c%s "$data_file")"
+
+          cat > backup/manifest.txt <<EOF
+          project_ref=$SUPABASE_PROJECT_REF
+          source_commit=$BACKUP_SOURCE_SHA
+          scope=public schema + public data
+          managed_schemas_excluded=auth,storage,extensions and other Supabase-managed schemas per CLI behavior
+          schema_bytes=$schema_bytes
+          data_bytes=$data_bytes
+          bundle_sha256=$bundle_checksum
+          run_id=$GITHUB_RUN_ID
+          EOF
+
+          echo "SUPABASE_BACKUP_CHECKSUM=$bundle_checksum" >> "$GITHUB_ENV"
+          echo "SUPABASE_SCHEMA_BYTES=$schema_bytes" >> "$GITHUB_ENV"
+          echo "SUPABASE_DATA_BYTES=$data_bytes" >> "$GITHUB_ENV"
+
+      - name: Upload Supabase backup artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: kdkmp-supabase-public-production-${{ github.run_id }}
+          path: backup/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report backup evidence
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Supabase logical backup PASS for project \`$SUPABASE_PROJECT_REF\` and source commit \`$BACKUP_SOURCE_SHA\`. Artifact: $ARTIFACT_URL · bundle SHA256: \`$SUPABASE_BACKUP_CHECKSUM\` · schema bytes: \`$SUPABASE_SCHEMA_BYTES\` · data bytes: \`$SUPABASE_DATA_BYTES\`. Scope is application public schema + data; Supabase-managed auth/storage schemas are excluded by design. Record this artifact/checksum in /capacity/recovery as provider SUPABASE. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Backup summary
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          {
+            echo "## KDKMP Supabase public logical backup"
+            echo "- Project: \`$SUPABASE_PROJECT_REF\`"
+            echo "- Source commit: \`$BACKUP_SOURCE_SHA\`"
+            echo "- Artifact: $ARTIFACT_URL"
+            echo "- Bundle SHA256: \`$SUPABASE_BACKUP_CHECKSUM\`"
+            echo "- Public schema bytes: \`$SUPABASE_SCHEMA_BYTES\`"
+            echo "- Public data bytes: \`$SUPABASE_DATA_BYTES\`"
+            echo "- Scope: application public schema + data"
+            echo "- Managed auth/storage schemas: excluded by Supabase CLI design"
+            echo "- Artifact retention: 30 days"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report backup failure
+        if: failure()
+        shell: bash
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Supabase logical backup FAILED for project \`$SUPABASE_PROJECT_REF\` and source commit \`${BACKUP_SOURCE_SHA:-unknown}\`. No backup evidence should be accepted until the failing step is corrected. Inspect: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
