@@ -47,6 +47,7 @@ function rpcError(message?: string) {
   const value = String(message || "");
   if (value.includes("CONTRACT_NOT_ACTIVE")) return "contract";
   if (value.includes("PENDING_EXISTS") || value.includes("loan_repayments_contract_open_uq")) return "pending";
+  if (value.includes("PENALTY_ENGINE_REQUIRED")) return "penalty";
   if (value.includes("EXCEEDS_OUTSTANDING")) return "overpay";
   if (value.includes("AMOUNT_INVALID")) return "amount";
   if (value.includes("CHANNEL_INVALID")) return "channel";
