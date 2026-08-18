@@ -6,10 +6,10 @@ export default function LoginPage() {
     <main className="shell">
       <section className="auth-card">
         <div className="brand-mark">KD</div>
-        <p className="eyebrow">AKSES DEVELOPMENT</p>
+        <p className="eyebrow">AKSES KDKMP</p>
         <h1 className="auth-title">Masuk KDKMP</h1>
         <p className="lead auth-lead">
-          Gunakan akun development yang terdaftar. Data anggota dan transaksi nyata belum digunakan pada fase ini.
+          Gunakan akun organisasi yang diberikan administrator. Penggunaan data nyata hanya dilakukan setelah gate go-live dinyatakan lulus.
         </p>
         <LoginForm />
         <Link className="text-link" href="/">← Kembali ke halaman status</Link>
