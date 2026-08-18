@@ -26,20 +26,49 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      CLOUDFLARE_PRODUCTION_URL: ${{ vars.CLOUDFLARE_PRODUCTION_URL }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WORKER_NAME: kdkmp-kedungharjo
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Validate target URL
+      - name: Resolve production URL
         shell: bash
         run: |
-          if [ -z "$CLOUDFLARE_PRODUCTION_URL" ]; then
-            echo "Missing CLOUDFLARE_PRODUCTION_URL" >&2
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "Cloudflare account/token secrets are required for live verification." >&2
             exit 1
           fi
-          case "$CLOUDFLARE_PRODUCTION_URL" in
-            https://*) ;;
-            *) echo "Production verification requires HTTPS." >&2; exit 1 ;;
-          esac
+          curl --fail --show-error --silent \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+            -o /tmp/workers-subdomain.json
+          node <<'NODE'
+          const fs = require('fs');
+          const value = JSON.parse(fs.readFileSync('/tmp/workers-subdomain.json', 'utf8'));
+          if (!value.success || !value.result?.subdomain) {
+            console.error('Could not resolve Cloudflare Workers subdomain.');
+            process.exit(1);
+          }
+          const url = `https://${process.env.WORKER_NAME}.${value.result.subdomain}.workers.dev`;
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_PRODUCTION_URL=${url}\n`);
+          console.log(`Resolved production URL: ${url}`);
+          NODE
+
+      - name: Verify Worker exposure
+        shell: bash
+        run: |
+          curl --fail --show-error --silent \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/subdomain" \
+            -o /tmp/worker-subdomain-status.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const value = JSON.parse(fs.readFileSync('/tmp/worker-subdomain-status.json', 'utf8'));
+          if (!value.success || value.result?.enabled !== true) {
+            console.error('Worker workers.dev exposure is not enabled.');
+            process.exit(1);
+          }
+          NODE
 
       - name: Verify infrastructure health
         shell: bash
@@ -83,7 +112,7 @@ jobs:
         shell: bash
         run: |
           sha="${{ github.event.workflow_run.head_sha || github.sha }}"
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Automated production live verification PASS for \`$sha\` at ${CLOUDFLARE_PRODUCTION_URL}: D1+Supabase health, public root/login, stale-development-copy guard, and PWA manifest checks all passed. Authenticated synthetic-data UAT + backup/restore evidence are still required before real-data go-live."
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Automated production live verification PASS for \`$sha\` at ${CLOUDFLARE_PRODUCTION_URL}: workers.dev exposure, D1+Supabase health, public root/login, stale-development-copy guard, and PWA manifest checks all passed. Authenticated synthetic-data UAT + backup/restore evidence are still required before real-data go-live."
 
       - name: Verification summary
         if: success()
@@ -92,6 +121,7 @@ jobs:
           {
             echo "## KDKMP live verification"
             echo "- URL: ${CLOUDFLARE_PRODUCTION_URL}"
+            echo "- Worker exposure: PASS"
             echo "- D1 + Supabase health: PASS"
             echo "- Public root/login: PASS"
             echo "- Stale development copy: NONE"
@@ -102,4 +132,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -f /tmp/health.json /tmp/home.html /tmp/login.html /tmp/manifest.json
+        run: rm -f /tmp/health.json /tmp/home.html /tmp/login.html /tmp/manifest.json /tmp/workers-subdomain.json /tmp/worker-subdomain-status.json

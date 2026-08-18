@@ -7,56 +7,66 @@ Repository memiliki tiga gate rilis terpisah:
 
 Deployment tidak berjalan otomatis saat merge. Workflow production membutuhkan input konfirmasi `DEPLOY-KDKMP-PRODUCTION` dan GitHub Environment bernama `production`.
 
-## Production settings
+## Production settings — hanya 3 secrets
 
-Set pada GitHub Environment `production` sebelum menjalankan workflow.
-
-### Secrets
+Set hanya tiga secret berikut pada GitHub Environment `production`:
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_D1_DATABASE_ID`
 
-### Variables
-- `CLOUDFLARE_D1_DATABASE_NAME`
-- `CLOUDFLARE_PRODUCTION_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+Tidak ada GitHub Environment variable lain yang diperlukan untuk deployment awal workers.dev.
 
-Supabase URL dikunci oleh workflow ke project `kdkmp-kedungharjo`:
+Workflow mengunci Supabase ke project `kdkmp-kedungharjo`:
 - `https://xhjdqmrehpnvvjktwltl.supabase.co`
+- publishable key aktif project sudah menjadi konfigurasi public client pada workflow; service-role/secret key tidak digunakan.
 
-Gunakan hanya publishable key aktif milik project tersebut. Jangan pernah memakai service-role/secret key sebagai `NEXT_PUBLIC_*`.
+API token Cloudflare harus dapat:
+- deploy/read Worker script;
+- membaca Workers account subdomain;
+- membaca metadata D1 untuk database ID yang diberikan.
 
-## D1 guardrail
+## Metadata production diturunkan otomatis
 
-`wrangler.jsonc` di repository hanya menyimpan bentuk dasar Worker. Workflow production membuat `wrangler.production.json` secara sementara dan menambahkan:
-- binding `DB`
-- `database_name` dari `CLOUDFLARE_D1_DATABASE_NAME`
-- `database_id` dari `CLOUDFLARE_D1_DATABASE_ID`
+Workflow tidak lagi meminta operator mengetik nama D1 atau URL Worker.
 
-File production hasil generate tidak dikomit dan dihapus pada akhir job. Hal ini mencegah kita menebak ID D1 serta membuat target production eksplisit.
+Dengan tiga secret di atas, workflow memanggil Cloudflare API untuk:
+1. mengambil metadata database dari `CLOUDFLARE_D1_DATABASE_ID` dan mendapatkan nama D1;
+2. mengambil Workers account subdomain;
+3. membentuk URL `https://kdkmp-kedungharjo.<workers-subdomain>.workers.dev`;
+4. menolak proses bila database ID tidak valid atau subdomain account tidak dapat di-resolve.
+
+`wrangler.jsonc` di repository tetap hanya menyimpan bentuk dasar Worker. Workflow membuat `wrangler.production.json` sementara yang berisi binding:
+- `DB`
+- `database_name` hasil Cloudflare API
+- `database_id` dari secret `CLOUDFLARE_D1_DATABASE_ID`
+
+File production hasil generate tidak dikomit dan dihapus setelah job.
 
 ## Candidate commit
-Deploy hanya commit `main` yang Application CI-nya hijau. CI sekarang juga menjalankan Wrangler dry run setelah OpenNext build agar bentuk deployment Worker tervalidasi sebelum production.
+Deploy hanya commit `main` yang Application CI-nya hijau. CI juga menjalankan Wrangler dry run setelah OpenNext build agar bentuk deployment Worker tervalidasi sebelum production.
 
 ## Workflow sequence
 1. Checkout exact `main` commit.
-2. Validasi seluruh production settings wajib tersedia dan URL production harus HTTPS.
-3. Install dependencies.
-4. Generate Wrangler production config.
-5. Typecheck.
-6. Next.js build.
-7. `opennextjs-cloudflare build --skipNextBuild` untuk target Workers.
-8. Wrangler production dry run.
-9. `opennextjs-cloudflare deploy` ke Cloudflare.
-10. Smoke test `/api/health`, `/login`, dan `/manifest.webmanifest`.
-11. `/api/health` harus membuktikan D1 current + Supabase reachable.
-12. Hapus generated production config.
-13. `Production Live Verification` berjalan otomatis dan mengulang verifikasi dari workflow terpisah.
+2. Validasi tiga Cloudflare secret.
+3. Resolve nama D1 + Workers account subdomain melalui Cloudflare API.
+4. Bentuk URL production workers.dev secara otomatis.
+5. Install dependencies.
+6. Generate Wrangler production config.
+7. Typecheck.
+8. Next.js build.
+9. `opennextjs-cloudflare build --skipNextBuild`.
+10. Wrangler production dry run.
+11. `opennextjs-cloudflare deploy`.
+12. Pastikan Worker memang enabled pada workers.dev.
+13. Smoke test `/api/health`, `/login`, dan `/manifest.webmanifest`.
+14. `/api/health` harus membuktikan D1 current + Supabase reachable.
+15. Hapus generated production files.
+16. `Production Live Verification` berjalan otomatis dan mengulang verifikasi dari workflow terpisah.
 
 ## Minimal health endpoint
 `/api/health` tidak menampilkan identifier database, schema version, key, user, atau data finansial. Endpoint hanya mengembalikan status minimal D1 dan Supabase dan memakai `Cache-Control: no-store`.
 
-Response sehat berbentuk:
+Response sehat:
 ```json
 {
   "status": "ok",
@@ -70,8 +80,9 @@ Response sehat berbentuk:
 Jika salah satu dependency tidak sehat, endpoint mengembalikan HTTP 503.
 
 ## Automatic post-deploy verification
-Setelah workflow deploy sukses, `.github/workflows/production-live-verify.yml` akan:
-- memastikan `/api/health` tetap PASS dari job terpisah;
+Setelah workflow deploy sukses, `.github/workflows/production-live-verify.yml` akan resolve URL workers.dev sendiri dari Account ID/API token lalu:
+- memastikan Worker enabled pada workers.dev;
+- memastikan `/api/health` PASS;
 - membuka root + login + manifest production;
 - gagal bila copy lama `PHASE 0`, `AKSES DEVELOPMENT`, atau `Masuk ke Development` masih muncul;
 - memvalidasi PWA `display=standalone`, `start_url=/dashboard`, dan icon;
@@ -80,7 +91,7 @@ Setelah workflow deploy sukses, `.github/workflows/production-live-verify.yml` a
 Workflow ini juga dapat dijalankan manual dengan input `VERIFY-KDKMP-PRODUCTION`.
 
 ## Pre-deploy operational gate
-- Confirm D1 database adalah database operasional KDKMP Kedungharjo yang benar.
+- Pastikan `CLOUDFLARE_D1_DATABASE_ID` adalah database operasional KDKMP Kedungharjo yang benar.
 - Record external backup D1 + Supabase.
 - Record restore test PASSED.
 - Gunakan synthetic/UAT data sampai seluruh gate selesai.
@@ -99,7 +110,7 @@ Automated live verification tidak memiliki kredensial user dan tidak membuat tra
 - install PWA dari HTTPS URL dan verifikasi launch/login/logout.
 
 ## Android boundary
-Jangan membuat production Capacitor package dengan `server.url`. KDKMP adalah SSR Worker application dan opsi Capacitor tersebut didokumentasikan untuk live reload, bukan production. Lihat `docs/android-packaging-decision.md`.
+Jangan membuat production Capacitor package dengan `server.url`. KDKMP adalah SSR Worker application dan opsi tersebut didokumentasikan untuk live reload, bukan production. Lihat `docs/android-packaging-decision.md`.
 
 ## Go-live
-Real member/financial data hanya boleh digunakan setelah automated live verification, `/readiness`, authenticated synthetic-data UAT, backup/restore evidence, dan reconciliation checks semuanya lulus.
+Real member/financial data hanya boleh digunakan setelah automated live verification, `/readiness`, authenticated synthetic-data UAT, backup/restore evidence, Auth production-setting review, dan reconciliation checks semuanya lulus.
