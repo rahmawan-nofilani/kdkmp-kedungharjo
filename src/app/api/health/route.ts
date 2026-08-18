@@ -10,13 +10,12 @@ async function checkSupabase() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   try {
-    const response = await fetch(`${baseUrl}/rest/v1/`, {
+    const response = await fetch(`${baseUrl}/auth/v1/health`, {
       method: "GET",
       cache: "no-store",
       headers: {
         apikey: key,
-        Authorization: `Bearer ${key}`,
-        Accept: "application/openapi+json",
+        Accept: "application/json",
       },
       signal: controller.signal,
     });
