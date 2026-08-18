@@ -32,6 +32,11 @@ jobs:
         shell: bash
         run: echo "BACKUP_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
+      - name: Report backup start
+        shell: bash
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "D1 external backup START for source commit \`$BACKUP_SOURCE_SHA\`. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -147,3 +152,9 @@ jobs:
             echo "- Bytes: \`$BACKUP_BYTES\`"
             echo "- Retention: 30 days"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report backup failure
+        if: failure()
+        shell: bash
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "D1 external backup FAILED for source commit \`${BACKUP_SOURCE_SHA:-unknown}\`. Inspect the exact failing step: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
