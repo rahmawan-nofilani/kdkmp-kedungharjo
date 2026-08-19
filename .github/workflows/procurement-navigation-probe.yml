@@ -1,0 +1,132 @@
+name: Procurement Navigation Probe
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  procurement-navigation-probe:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'PROBE-KDKMP-PROCUREMENT-NAV' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 10
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard credential
+        shell: bash
+        run: test -n "$UAT_ADMINUNIT_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Probe authenticated navigation
+        id: probe
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-probe
+          python <<'PY'
+          import os
+          import re
+          import traceback
+          from playwright.sync_api import sync_playwright, expect
+
+          base = os.environ['UAT_BASE_URL'].rstrip('/')
+          email = os.environ['UAT_ADMINUNIT_EMAIL']
+          password = os.environ['UAT_ADMINUNIT_PASSWORD']
+          stage = 'login'
+
+          def output(name, value):
+              with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+                  f.write(f'{name}={value}\n')
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              page = browser.new_page()
+              page.set_default_timeout(15000)
+              try:
+                  page.goto(f'{base}/login', wait_until='networkidle')
+                  page.get_by_label('Email', exact=True).fill(email)
+                  page.get_by_label('Kata sandi', exact=True).fill(password)
+                  page.get_by_role('button', name='Masuk ke KDKMP').click()
+                  page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'), timeout=20000)
+                  output('dashboard_url', page.url)
+
+                  stage = 'sidebar-link'
+                  link = page.get_by_role('link', name='Pembelian', exact=True)
+                  expect(link).to_be_visible()
+                  href = link.get_attribute('href') or ''
+                  output('sidebar_href', href)
+                  if '/procurement' not in href:
+                      raise RuntimeError(f'Pembelian link href unexpected: {href}')
+
+                  stage = 'click-procurement'
+                  link.click()
+                  page.wait_for_url(re.compile(r'.*/procurement(?:\?.*)?$'), timeout=20000)
+                  output('procurement_url', page.url)
+
+                  stage = 'procurement-render'
+                  expect(page.get_by_role('heading', name='Supplier & Purchasing Control')).to_be_visible(timeout=15000)
+                  expect(page.get_by_role('button', name='Simpan Supplier')).to_be_visible(timeout=15000)
+                  expect(page.get_by_role('button', name='Submit Purchase Request')).to_be_visible(timeout=15000)
+                  page.screenshot(path='/tmp/kdkmp-probe/procurement-navigation-pass.png', full_page=True)
+                  output('failure_stage', '')
+                  print('Procurement navigation probe PASS')
+              except Exception:
+                  output('failure_stage', stage)
+                  try:
+                      page.screenshot(path='/tmp/kdkmp-probe/procurement-navigation-failure.png', full_page=True)
+                  except Exception:
+                      pass
+                  traceback.print_exc()
+                  raise
+              finally:
+                  browser.close()
+          PY
+
+      - name: Record probe PASS
+        if: success()
+        shell: bash
+        env:
+          DASHBOARD_URL: ${{ steps.probe.outputs.dashboard_url }}
+          SIDEBAR_HREF: ${{ steps.probe.outputs.sidebar_href }}
+          PROCUREMENT_URL: ${{ steps.probe.outputs.procurement_url }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Read-only Procurement navigation probe PASS. Run \`$GITHUB_RUN_ID\`. Dashboard: \`$DASHBOARD_URL\`; Pembelian href: \`$SIDEBAR_HREF\`; landed: \`$PROCUREMENT_URL\`. ADMIN_UNIT can reach and render Procurement through the same sidebar path a human uses. No application transaction was created by this probe."
+
+      - name: Record probe failure
+        if: failure()
+        shell: bash
+        env:
+          FAILURE_STAGE: ${{ steps.probe.outputs.failure_stage }}
+          SIDEBAR_HREF: ${{ steps.probe.outputs.sidebar_href }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Read-only Procurement navigation probe did not PASS. Run \`$GITHUB_RUN_ID\`. Stage: \`${FAILURE_STAGE:-setup}\`; observed Pembelian href: \`${SIDEBAR_HREF:-unknown}\`. No application transaction was created."
+
+      - name: Upload probe screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: procurement-navigation-probe-${{ github.run_id }}
+          path: /tmp/kdkmp-probe/*.png
+          if-no-files-found: ignore
+          retention-days: 7
