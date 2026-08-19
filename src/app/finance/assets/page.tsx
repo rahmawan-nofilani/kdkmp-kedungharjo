@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { PageContainer, PageHeader } from "@/components/ui/page-layout";
 import { getAccessContext } from "@/lib/access/context";
 import { listAccounts } from "@/lib/d1/accounting-config";
 import { getD1SchemaStatus } from "@/lib/d1/context";
@@ -8,128 +12,42 @@ import { ensureAssetFoundation, listDepreciationRuns, listFixedAssets } from "@/
 import { activateFixedAssetAction, createDepreciationRunAction, createFixedAssetAction, postDepreciationRunAction } from "./actions";
 import styles from "./assets.module.css";
 
-export const dynamic = "force-dynamic";
+export const dynamic="force-dynamic";
+type Props={searchParams:Promise<{status?:string;error?:string}>};
+function rupiah(value:number){return new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(value)}
+function wibToday(){return new Date(Date.now()+7*60*60*1000).toISOString().slice(0,10)}
+function statusLabel(status:string){return({DRAFT:"DRAFT / Belum disetujui",ACTIVE:"Aktif",FULLY_DEPRECIATED:"Sudah habis disusutkan",DISPOSED:"Sudah dilepas",CANCELLED:"Dibatalkan",POSTED:"Sudah dicatat"}as Record<string,string>)[status]||status}
+function statusTone(status:string):"success"|"warning"|"danger"|"info"|"neutral"{if(["ACTIVE","POSTED","FULLY_DEPRECIATED"].includes(status))return"success";if(status==="DRAFT")return"warning";if(["CANCELLED","DISPOSED"].includes(status))return"danger";return"neutral"}
 
-type Props = { searchParams: Promise<{ status?:string; error?:string }> };
+export default async function AssetsPage({searchParams}:Props){
+ const access=await getAccessContext();if(!access)redirect("/login");if(!access.permissions.includes("FINANCE_VIEW"))redirect("/dashboard");
+ const schema=await getD1SchemaStatus();if(!schema.features.assetDepreciation)redirect("/setup/database");await ensureAssetFoundation(access.organization.id);
+ const [assets,runs,accounts,params]=await Promise.all([listFixedAssets(access.organization.id),listDepreciationRuns(access.organization.id,36),listAccounts(access.organization.id),searchParams]);
+ const canManage=access.permissions.includes("ASSET_MANAGE");const canApprove=access.permissions.includes("ASSET_APPROVE");
+ const assetAccounts=accounts.filter((a)=>a.status==="ACTIVE"&&a.account_type==="ASSET"&&a.normal_balance==="DEBIT");const accumulatedAccounts=accounts.filter((a)=>a.status==="ACTIVE"&&a.account_type==="ASSET"&&a.normal_balance==="CREDIT");const expenseAccounts=accounts.filter((a)=>a.status==="ACTIVE"&&a.account_type==="EXPENSE");
+ const totalCost=assets.filter((a)=>!["CANCELLED","DISPOSED"].includes(a.status)).reduce((s,a)=>s+a.acquisition_cost_amount,0);const totalAccum=assets.reduce((s,a)=>s+a.accumulated_depreciation_amount,0);const totalBook=assets.filter((a)=>!["CANCELLED","DISPOSED"].includes(a.status)).reduce((s,a)=>s+a.book_value_amount,0);const activeCount=assets.filter((a)=>a.status==="ACTIVE").length;const today=wibToday();const currentMonth=today.slice(0,7);
+ return <PageContainer size="full">
+  <PageHeader eyebrow="Keuangan · Aset Tetap" title="Aset & Penyusutan" description="Catat aset, nilai buku, dan penyusutan bulanan dengan workflow maker-checker yang tetap terhubung ke jurnal akuntansi." actions={<div className={styles.panelHeader}><Link href="/finance">Keuangan</Link><Link href="/finance/closing-readiness">Kesiapan Tutup Buku</Link></div>}/>
+  {params.status?<Alert tone="success" title="Proses berhasil">{params.status.replace(/-/g," ")}.</Alert>:null}
+  {params.error?<Alert tone="danger" title="Aset belum dapat diproses">{params.error}</Alert>:null}
 
-function rupiah(value:number) {
-  return new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(value);
-}
-function wibToday() { return new Date(Date.now()+7*60*60*1000).toISOString().slice(0,10); }
-function statusLabel(status:string) {
-  return ({ DRAFT:"DRAFT / Belum disetujui", ACTIVE:"Aktif", FULLY_DEPRECIATED:"Sudah habis disusutkan", DISPOSED:"Sudah dilepas", CANCELLED:"Dibatalkan", POSTED:"Sudah dicatat" } as Record<string,string>)[status] || status;
-}
+  <section className={styles.metrics}>
+   <Card density="compact"><span>Jumlah aset aktif</span><strong>{activeCount}</strong><small>{assets.length} total register</small></Card>
+   <Card density="compact"><span>Harga perolehan</span><strong>{rupiah(totalCost)}</strong><small>nilai awal aset</small></Card>
+   <Card density="compact"><span>Sudah disusutkan</span><strong>{rupiah(totalAccum)}</strong><small>akumulasi penyusutan</small></Card>
+   <Card density="compact"><span>Nilai buku saat ini</span><strong>{rupiah(totalBook)}</strong><small>nilai setelah penyusutan</small></Card>
+  </section>
 
-export default async function AssetsPage({ searchParams }:Props) {
-  const access = await getAccessContext();
-  if (!access) redirect("/login");
-  if (!access.permissions.includes("FINANCE_VIEW")) redirect("/dashboard");
-  const schema = await getD1SchemaStatus();
-  if (!schema.features.assetDepreciation) redirect("/setup/database");
-  await ensureAssetFoundation(access.organization.id);
-  const [assets,runs,accounts,params] = await Promise.all([
-    listFixedAssets(access.organization.id),
-    listDepreciationRuns(access.organization.id,36),
-    listAccounts(access.organization.id),
-    searchParams,
-  ]);
-  const canManage = access.permissions.includes("ASSET_MANAGE");
-  const canApprove = access.permissions.includes("ASSET_APPROVE");
-  const assetAccounts = accounts.filter((a)=>a.status==="ACTIVE"&&a.account_type==="ASSET"&&a.normal_balance==="DEBIT");
-  const accumulatedAccounts = accounts.filter((a)=>a.status==="ACTIVE"&&a.account_type==="ASSET"&&a.normal_balance==="CREDIT");
-  const expenseAccounts = accounts.filter((a)=>a.status==="ACTIVE"&&a.account_type==="EXPENSE");
-  const totalCost = assets.filter((a)=>!["CANCELLED","DISPOSED"].includes(a.status)).reduce((s,a)=>s+a.acquisition_cost_amount,0);
-  const totalAccum = assets.reduce((s,a)=>s+a.accumulated_depreciation_amount,0);
-  const totalBook = assets.filter((a)=>!["CANCELLED","DISPOSED"].includes(a.status)).reduce((s,a)=>s+a.book_value_amount,0);
-  const activeCount = assets.filter((a)=>a.status==="ACTIVE").length;
-  const today = wibToday();
-  const currentMonth = today.slice(0,7);
+  {canManage?<Card className={styles.panel}><div className={styles.panelHeader}><div><span>TAMBAH ASET</span><h3>Buat data aset DRAFT</h3></div><Badge tone="info">MAKER</Badge></div><form action={createFixedAssetAction} className={styles.assetForm}><label>Kode aset<input name="assetCode" required minLength={3} maxLength={30} placeholder="AST-LAPTOP-001"/></label><label>Nama aset<input name="name" required minLength={3} maxLength={120} placeholder="Laptop Operasional Teller"/></label><label>Kategori<input name="category" placeholder="Peralatan kantor"/></label><label>Tanggal perolehan<input type="date" name="acquisitionDate" defaultValue={today} required/></label><label>Mulai digunakan<input type="date" name="inServiceDate" defaultValue={today} required/></label><label>Harga perolehan (Rp)<input type="number" name="acquisitionCostAmount" min="1" step="1" required placeholder="12000000"/></label><label>Nilai sisa (Rp)<input type="number" name="residualValueAmount" min="0" step="1" defaultValue="0" required/></label><label>Masa manfaat (bulan)<input type="number" name="usefulLifeMonths" min="1" max="600" step="1" defaultValue="36" required/></label><label>Akun Aset Tetap<select name="assetAccountId" defaultValue={assetAccounts.find((a)=>a.code==="1-1400")?.id||""} required>{assetAccounts.map((a)=><option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}</select></label><label>Akun Akumulasi Penyusutan<select name="accumulatedDepreciationAccountId" defaultValue={accumulatedAccounts.find((a)=>a.code==="1-1490")?.id||""} required>{accumulatedAccounts.map((a)=><option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}</select></label><label>Akun Beban Penyusutan<select name="depreciationExpenseAccountId" defaultValue={expenseAccounts.find((a)=>a.code==="5-2000")?.id||""} required>{expenseAccounts.map((a)=><option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}</select></label><label className={styles.wide}>Catatan<input name="notes" maxLength={240} placeholder="Opsional: lokasi / penanggung jawab aset"/></label><div className={styles.wide}><PendingSubmitButton pendingLabel="Menyimpan aset…">Simpan Aset DRAFT</PendingSubmitButton></div></form><p className={styles.note}>DRAFT belum ikut proses penyusutan. User lain dengan hak pemeriksa harus mengaktifkannya terlebih dahulu.</p></Card>:null}
 
-  return <main className={styles.page}>
-    <header className={styles.topbar}>
-      <div><p>KEUANGAN · ASET TETAP</p><h1>Aset & Penyusutan</h1></div>
-      <nav><Link href="/finance/closing-readiness">Kesiapan Tutup Buku</Link><Link href="/finance">Keuangan</Link><Link href="/dashboard">Dashboard</Link></nav>
-    </header>
+  <Card className={styles.panel}><div className={styles.panelHeader}><div><span>DAFTAR ASET</span><h3>Nilai aset & nilai buku</h3></div><Badge>{assets.length} aset</Badge></div>{assets.length?<div className={styles.tableWrap}><table><thead><tr><th>Aset</th><th>Perolehan</th><th>Masa manfaat</th><th>Sudah disusutkan</th><th>Nilai buku</th><th>Status</th><th>Tindakan</th></tr></thead><tbody>{assets.map((asset)=>{const monthly=Math.max(0,Math.floor((asset.acquisition_cost_amount-asset.residual_value_amount)/asset.useful_life_months));const canActivate=canApprove&&asset.status==="DRAFT"&&asset.created_by!==access.user.id;return <tr key={asset.id}><td><strong>{asset.asset_code}</strong><span>{asset.name}{asset.category?` · ${asset.category}`:""}</span></td><td><strong>{rupiah(asset.acquisition_cost_amount)}</strong><span>Nilai sisa {rupiah(asset.residual_value_amount)}</span></td><td><strong>{asset.useful_life_months} bulan</strong><span>± {rupiah(monthly)}/bulan</span></td><td>{rupiah(asset.accumulated_depreciation_amount)}</td><td><strong>{rupiah(asset.book_value_amount)}</strong></td><td><Badge tone={statusTone(asset.status)}>{statusLabel(asset.status)}</Badge></td><td>{canActivate?<form action={activateFixedAssetAction}><input type="hidden" name="assetId" value={asset.id}/><PendingSubmitButton pendingLabel="Mengaktifkan…">Periksa & Aktifkan</PendingSubmitButton></form>:asset.status==="DRAFT"?<small>{asset.created_by===access.user.id?"Menunggu pemeriksa lain":"Tidak punya hak pemeriksa"}</small>:"—"}</td></tr>})}</tbody></table></div>:<div className={styles.empty}>Belum ada aset tetap.</div>}</Card>
 
-    <div className={styles.content}>
-      <section className={styles.hero}>
-        <div><span>PHASE 3F · ASET TETAP</span><h2>Catat aset, nilai buku, dan penyusutan bulanan dengan bahasa yang mudah dipahami.</h2><p><b>Penyusutan Garis Lurus</b> berarti nilai aset dikurangi dengan jumlah yang sama setiap bulan selama masa manfaatnya. Sistem menghitung otomatis dan mencatat jurnal setelah diperiksa user yang berbeda.</p></div>
-        <div className={styles.roleCard}><span>Versi database</span><strong>{schema.currentVersion}</strong><small>{access.organization.name}</small></div>
-      </section>
+  <section className={styles.twoColumn}>
+   {canManage?<Card className={styles.panel}><div className={styles.panelHeader}><div><span>PENYUSUTAN BULANAN</span><h3>Hitung penyusutan</h3></div><Badge tone="info">OTOMATIS</Badge></div><form action={createDepreciationRunAction} className={styles.stackForm}><label>Bulan<input type="month" name="periodMonth" defaultValue={currentMonth} required/></label><label>Catatan<input name="notes" maxLength={200} placeholder="Contoh: Penyusutan rutin bulan berjalan"/></label><PendingSubmitButton pendingLabel="Menghitung…">Hitung Penyusutan Bulan Ini</PendingSubmitButton></form><p className={styles.note}>Sistem hanya memasukkan aset ACTIVE yang masih memiliki nilai untuk disusutkan.</p></Card>:null}
+   <Card className={styles.explain}><span>ISTILAH SEDERHANA</span><h3>Apa arti angka-angkanya?</h3><div><b>Harga perolehan</b><p>Harga awal saat aset diperoleh.</p></div><div><b>Nilai sisa</b><p>Perkiraan nilai aset setelah masa manfaat selesai.</p></div><div><b>Akumulasi penyusutan</b><p>Total nilai yang sudah dibebankan sebagai penyusutan.</p></div><div><b>Nilai buku</b><p>Nilai aset yang masih tersisa di pembukuan.</p></div></Card>
+  </section>
 
-      {params.status ? <div className={styles.success}>Berhasil: {params.status.replace(/-/g," ")}.</div> : null}
-      {params.error ? <div className={styles.error}>{params.error}</div> : null}
-
-      <section className={styles.metrics}>
-        <article><span>Jumlah aset aktif</span><strong>{activeCount}</strong><small>{assets.length} total register</small></article>
-        <article><span>Harga perolehan</span><strong>{rupiah(totalCost)}</strong><small>nilai awal aset</small></article>
-        <article><span>Sudah disusutkan</span><strong>{rupiah(totalAccum)}</strong><small>akumulasi penyusutan</small></article>
-        <article><span>Nilai buku saat ini</span><strong>{rupiah(totalBook)}</strong><small>nilai setelah penyusutan</small></article>
-      </section>
-
-      {canManage ? <section className={styles.panel}>
-        <div className={styles.panelHeader}><div><span>TAMBAH ASET</span><h3>Buat data aset DRAFT</h3></div><b>Pembuat</b></div>
-        <form action={createFixedAssetAction} className={styles.assetForm}>
-          <label>Kode aset<input name="assetCode" required minLength={3} maxLength={30} placeholder="AST-LAPTOP-001" /></label>
-          <label>Nama aset<input name="name" required minLength={3} maxLength={120} placeholder="Laptop Operasional Teller" /></label>
-          <label>Kategori<input name="category" placeholder="Peralatan kantor" /></label>
-          <label>Tanggal perolehan<input type="date" name="acquisitionDate" defaultValue={today} required /></label>
-          <label>Mulai digunakan<input type="date" name="inServiceDate" defaultValue={today} required /></label>
-          <label>Harga perolehan (Rp)<input type="number" name="acquisitionCostAmount" min="1" step="1" required placeholder="12000000" /></label>
-          <label>Nilai sisa (Rp)<input type="number" name="residualValueAmount" min="0" step="1" defaultValue="0" required /></label>
-          <label>Masa manfaat (bulan)<input type="number" name="usefulLifeMonths" min="1" max="600" step="1" defaultValue="36" required /></label>
-          <label>Akun Aset Tetap<select name="assetAccountId" defaultValue={assetAccounts.find((a)=>a.code==="1-1400")?.id || ""} required>{assetAccounts.map((a)=><option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}</select></label>
-          <label>Akun Akumulasi Penyusutan<select name="accumulatedDepreciationAccountId" defaultValue={accumulatedAccounts.find((a)=>a.code==="1-1490")?.id || ""} required>{accumulatedAccounts.map((a)=><option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}</select></label>
-          <label>Akun Beban Penyusutan<select name="depreciationExpenseAccountId" defaultValue={expenseAccounts.find((a)=>a.code==="5-2000")?.id || ""} required>{expenseAccounts.map((a)=><option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}</select></label>
-          <label className={styles.wide}>Catatan<input name="notes" maxLength={240} placeholder="Opsional: lokasi / penanggung jawab aset" /></label>
-          <div className={styles.wide}><PendingSubmitButton pendingLabel="Menyimpan aset…">Simpan Aset DRAFT</PendingSubmitButton></div>
-        </form>
-        <p className={styles.note}>DRAFT belum ikut proses penyusutan. User lain dengan hak pemeriksa harus mengaktifkannya terlebih dahulu.</p>
-      </section> : null}
-
-      <section className={styles.panel}>
-        <div className={styles.panelHeader}><div><span>DAFTAR ASET</span><h3>Nilai aset & nilai buku</h3></div><b>{assets.length} aset</b></div>
-        {assets.length ? <div className={styles.tableWrap}><table><thead><tr><th>Aset</th><th>Perolehan</th><th>Masa manfaat</th><th>Sudah disusutkan</th><th>Nilai buku</th><th>Status</th><th>Tindakan</th></tr></thead><tbody>{assets.map((asset)=>{
-          const monthly = Math.max(0,Math.floor((asset.acquisition_cost_amount-asset.residual_value_amount)/asset.useful_life_months));
-          const canActivate = canApprove && asset.status==="DRAFT" && asset.created_by!==access.user.id;
-          return <tr key={asset.id}>
-            <td><strong>{asset.asset_code}</strong><span>{asset.name}{asset.category?` · ${asset.category}`:""}</span></td>
-            <td><strong>{rupiah(asset.acquisition_cost_amount)}</strong><span>Nilai sisa {rupiah(asset.residual_value_amount)}</span></td>
-            <td><strong>{asset.useful_life_months} bulan</strong><span>± {rupiah(monthly)}/bulan</span></td>
-            <td>{rupiah(asset.accumulated_depreciation_amount)}</td>
-            <td><strong>{rupiah(asset.book_value_amount)}</strong></td>
-            <td><span className={asset.status==="ACTIVE"?styles.pass:asset.status==="DRAFT"?styles.check:styles.muted}>{statusLabel(asset.status)}</span></td>
-            <td>{canActivate?<form action={activateFixedAssetAction}><input type="hidden" name="assetId" value={asset.id}/><PendingSubmitButton pendingLabel="Mengaktifkan…">Periksa & Aktifkan</PendingSubmitButton></form>:asset.status==="DRAFT"?<small>{asset.created_by===access.user.id?"Menunggu pemeriksa lain":"Tidak punya hak pemeriksa"}</small>:"—"}</td>
-          </tr>;
-        })}</tbody></table></div> : <div className={styles.empty}>Belum ada aset tetap.</div>}
-      </section>
-
-      <section className={styles.twoColumn}>
-        {canManage ? <article className={styles.panel}>
-          <div className={styles.panelHeader}><div><span>PENYUSUTAN BULANAN</span><h3>Hitung penyusutan</h3></div><b>Otomatis</b></div>
-          <form action={createDepreciationRunAction} className={styles.stackForm}>
-            <label>Bulan<input type="month" name="periodMonth" defaultValue={currentMonth} required /></label>
-            <label>Catatan<input name="notes" maxLength={200} placeholder="Contoh: Penyusutan rutin bulan berjalan" /></label>
-            <PendingSubmitButton pendingLabel="Menghitung…">Hitung Penyusutan Bulan Ini</PendingSubmitButton>
-          </form>
-          <p className={styles.note}>Sistem hanya memasukkan aset ACTIVE yang memang masih memiliki nilai untuk disusutkan.</p>
-        </article> : null}
-        <article className={styles.explain}>
-          <span>ISTILAH SEDERHANA</span><h3>Apa arti angka-angkanya?</h3>
-          <div><b>Harga perolehan</b><p>Harga awal saat aset diperoleh.</p></div>
-          <div><b>Nilai sisa</b><p>Perkiraan nilai aset setelah masa manfaat selesai.</p></div>
-          <div><b>Akumulasi penyusutan</b><p>Total nilai yang sudah dibebankan sebagai penyusutan.</p></div>
-          <div><b>Nilai buku</b><p>Nilai aset yang masih tersisa di pembukuan.</p></div>
-        </article>
-      </section>
-
-      <section className={styles.panel}>
-        <div className={styles.panelHeader}><div><span>RIWAYAT PENYUSUTAN</span><h3>Perhitungan bulanan</h3></div><b>{runs.length}</b></div>
-        {runs.length ? <div className={styles.tableWrap}><table><thead><tr><th>Bulan</th><th>No.</th><th>Aset</th><th>Nilai penyusutan</th><th>Status</th><th>Tindakan</th></tr></thead><tbody>{runs.map((run)=>{
-          const canPost = canApprove && run.status==="DRAFT" && run.created_by!==access.user.id;
-          return <tr key={run.id}><td><strong>{run.period_month}</strong></td><td>{run.run_number}</td><td>{run.asset_count}</td><td><strong>{rupiah(run.total_amount)}</strong></td><td><span className={run.status==="POSTED"?styles.pass:styles.check}>{statusLabel(run.status)}</span></td><td>{canPost?<form action={postDepreciationRunAction}><input type="hidden" name="runId" value={run.id}/><PendingSubmitButton pendingLabel="Mencatat jurnal…">Periksa & Catat Penyusutan</PendingSubmitButton></form>:run.status==="DRAFT"?<small>{run.created_by===access.user.id?"Menunggu pemeriksa lain":"Tidak punya hak pemeriksa"}</small>:run.journal_entry_id?"Sudah masuk jurnal":"—"}</td></tr>;
-        })}</tbody></table></div> : <div className={styles.empty}>Belum ada proses penyusutan.</div>}
-      </section>
-    </div>
-  </main>;
+  <Card className={styles.panel}><div className={styles.panelHeader}><div><span>RIWAYAT PENYUSUTAN</span><h3>Perhitungan bulanan</h3></div><Badge>{runs.length}</Badge></div>{runs.length?<div className={styles.tableWrap}><table><thead><tr><th>Bulan</th><th>No.</th><th>Aset</th><th>Nilai penyusutan</th><th>Status</th><th>Tindakan</th></tr></thead><tbody>{runs.map((run)=>{const canPost=canApprove&&run.status==="DRAFT"&&run.created_by!==access.user.id;return <tr key={run.id}><td><strong>{run.period_month}</strong></td><td>{run.run_number}</td><td>{run.asset_count}</td><td><strong>{rupiah(run.total_amount)}</strong></td><td><Badge tone={statusTone(run.status)}>{statusLabel(run.status)}</Badge></td><td>{canPost?<form action={postDepreciationRunAction}><input type="hidden" name="runId" value={run.id}/><PendingSubmitButton pendingLabel="Mencatat jurnal…">Periksa & Catat Penyusutan</PendingSubmitButton></form>:run.status==="DRAFT"?<small>{run.created_by===access.user.id?"Menunggu pemeriksa lain":"Tidak punya hak pemeriksa"}</small>:run.journal_entry_id?"Sudah masuk jurnal":"—"}</td></tr>})}</tbody></table></div>:<div className={styles.empty}>Belum ada proses penyusutan.</div>}</Card>
+  <Alert tone="info" title="Kontrol penyusutan">Perhitungan dan posting tetap dipisahkan maker-checker. Presentasi baru tidak mengubah jurnal, akun, atau period guard.</Alert>
+ </PageContainer>;
 }
