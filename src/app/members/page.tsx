@@ -31,6 +31,7 @@ export default async function MembersPage({searchParams}:PageProps){
   const members=data??[];const filtered=q?members.filter((member)=>[member.member_number,member.full_name,member.phone,member.household_code,member.hamlet].filter(Boolean).some((value)=>String(value).toLowerCase().includes(q))):members;
   const counts=members.reduce((acc,member)=>{acc.total+=1;if(member.status==="ACTIVE")acc.active+=1;if(member.status==="PENDING")acc.pending+=1;if(member.status==="SUSPENDED")acc.suspended+=1;return acc;},{total:0,active:0,pending:0,suspended:0});
   const failure=errorMessage(params.error)||(error?"Daftar anggota belum dapat dibaca.":null);
+  const statusAction=(member:{id:string;status:string})=>canManage?<form action={setMemberStatus}><input type="hidden" name="member_id" value={member.id}/><input type="hidden" name="status" value={member.status!=="ACTIVE"?"ACTIVE":"SUSPENDED"}/><button type="submit">{member.status!=="ACTIVE"?"Aktifkan":"Suspend"}</button></form>:null;
 
   return <PageContainer size="wide">
     <PageHeader eyebrow="Operasional · Anggota" title="Data Anggota" description="Registry anggota untuk pencarian teller, transaksi, simpanan, pinjaman, dan layanan koperasi." actions={access.permissions.includes("POS_ACCESS")?<Link className={styles.primaryButton} href="/teller">Buka Teller</Link>:undefined}/>
@@ -50,7 +51,7 @@ export default async function MembersPage({searchParams}:PageProps){
       {q?<Link className={styles.linkButton} href="/members">Reset</Link>:null}
     </section>
 
-    {canManage?<details className={styles.createPanel}><summary>+ Tambah anggota sintetis / operasional</summary><form className={styles.formGrid} action={createMember}>
+    {canManage?<details className={styles.createPanel}><summary>+ Tambah anggota</summary><form className={styles.formGrid} action={createMember}>
       <label>Nomor anggota<input name="member_number" placeholder="DEV-0004" required minLength={3} maxLength={40}/></label>
       <label className={styles.formWide}>Nama lengkap<input name="full_name" placeholder="Nama anggota" required minLength={2} maxLength={160}/></label>
       <label>Telepon<input name="phone" placeholder="08..." maxLength={32}/></label><label>Kode KK internal<input name="household_code" placeholder="KK-0004" maxLength={60}/></label>
@@ -62,12 +63,19 @@ export default async function MembersPage({searchParams}:PageProps){
 
     <Card className={styles.tableCard}>
       <div className={styles.tableHead}><strong>Daftar anggota</strong><span>{filtered.length} dari {members.length} data</span></div>
-      {filtered.length?<div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>No. Anggota</th><th>Nama</th><th>KK / Wilayah</th><th>Telepon</th><th>Sejak</th><th>Status</th>{canManage?<th>Tindakan</th>:null}</tr></thead><tbody>{filtered.map((member)=><tr key={member.id}>
-        <td><strong>{member.member_number}</strong>{member.member_number.startsWith("DEV-")?<span className={styles.demo}>SYNTHETIC</span>:null}</td>
-        <td className={styles.memberName}><strong>{member.full_name}</strong><span>{member.hamlet||"Wilayah belum diisi"}</span></td>
-        <td>{member.household_code||"—"}<br/><small>RT {member.rt||"—"} / RW {member.rw||"—"}</small></td><td>{member.phone||"—"}</td><td>{member.member_since}</td><td><Badge tone={statusTone(member.status)}>{member.status}</Badge></td>
-        {canManage?<td><div className={styles.actions}>{member.status!=="ACTIVE"?<form action={setMemberStatus}><input type="hidden" name="member_id" value={member.id}/><input type="hidden" name="status" value="ACTIVE"/><button type="submit">Aktifkan</button></form>:<form action={setMemberStatus}><input type="hidden" name="member_id" value={member.id}/><input type="hidden" name="status" value="SUSPENDED"/><button type="submit">Suspend</button></form>}</div></td>:null}
-      </tr>)}</tbody></table></div>:<div className={styles.empty}>Tidak ada anggota yang cocok dengan pencarian.</div>}
+      {filtered.length?<>
+        <div className={styles.desktopMemberTable}><div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>No. Anggota</th><th>Nama</th><th>KK / Wilayah</th><th>Telepon</th><th>Sejak</th><th>Status</th>{canManage?<th>Tindakan</th>:null}</tr></thead><tbody>{filtered.map((member)=><tr key={member.id}>
+          <td><strong>{member.member_number}</strong>{member.member_number.startsWith("DEV-")?<span className={styles.demo}>SYNTHETIC</span>:null}</td>
+          <td className={styles.memberName}><strong>{member.full_name}</strong><span>{member.hamlet||"Wilayah belum diisi"}</span></td>
+          <td>{member.household_code||"—"}<br/><small>RT {member.rt||"—"} / RW {member.rw||"—"}</small></td><td>{member.phone||"—"}</td><td>{member.member_since}</td><td><Badge tone={statusTone(member.status)}>{member.status}</Badge></td>
+          {canManage?<td><div className={styles.actions}>{statusAction(member)}</div></td>:null}
+        </tr>)}</tbody></table></div></div>
+        <div className={styles.mobileMemberList}>{filtered.map(member=><article className={styles.memberCard} key={`mobile-${member.id}`}>
+          <div className={styles.memberCardTop}><div><strong>{member.full_name}</strong><span>{member.member_number}{member.member_number.startsWith("DEV-")?" · SYNTHETIC":""}</span></div><Badge tone={statusTone(member.status)}>{member.status}</Badge></div>
+          <dl><div><dt>Telepon</dt><dd>{member.phone||"—"}</dd></div><div><dt>Wilayah</dt><dd>{member.hamlet||"—"} · RT {member.rt||"—"}/RW {member.rw||"—"}</dd></div><div><dt>Kode KK</dt><dd>{member.household_code||"—"}</dd></div><div><dt>Sejak</dt><dd>{member.member_since}</dd></div></dl>
+          {canManage?<div className={styles.mobileMemberAction}>{statusAction(member)}</div>:null}
+        </article>)}</div>
+      </>:<div className={styles.empty}>Tidak ada anggota yang cocok dengan pencarian.</div>}
     </Card>
   </PageContainer>;
 }

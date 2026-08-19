@@ -1,36 +1,23 @@
-# KopdesKu Integration Pack v1.2 — execution record
+# KopdesKu Integration Pack v1.2 — FINAL IMPLEMENTED / DEPLOYED
 
-`KopdesKu_Integration_Pack_v1.2_FINAL.zip` supersedes v1.1. `START_HERE.md` and `RESOLUTION_ADDENDUM_v1.2.md` resolve the former temporary-logo finding: production master assets are approved and applied directly.
+`KopdesKu_Integration_Pack_v1.2_FINAL.zip` superseded v1.1 and remains the canonical foundation for the approved KopdesKu brand identity, logo assets, colors, Poppins foundation, component semantics, and presentation safety boundary.
 
-## Prompt 1 — COMPLETE
+Prompt 1 (DS-0 through DS-3) and Prompt 2 (all presentation migration batches) are COMPLETE. Original design migration PR #54 was merged and the v1.2 Web/PWA release was deployed with authenticated/PWA smoke PASS. Full August 1–31 accounting month-end certification remains a separate calendar-bound gate and must not be fabricated.
 
-- DS-0 repository mapping and business-logic boundary.
-- DS-1 canonical tokens, Poppins, light-default foundation, and production KopdesKu branding.
-- DS-2 shared core UI primitives and internal SVG icons.
-- DS-3 Deep Navy AppShell, permission-filtered Sidebar, shared Topbar, PageHeader/PageContainer, and 5-slot mobile navigation: Beranda / POS / Transaksi / Laporan / Lainnya.
+## Canonical assets locked by v1.2
 
-## Prompt 2 — PRESENTATION MIGRATION COMPLETE
-
-- Batch 1: Landing/Login + Dashboard.
-- Batch 2: POS + Teller + Sales/Receipt.
-- Batch 3: Members + Inventory + Stock Opname + Procurement + PO/Receiving + Accounts Payable.
-- Batch 4: Finance overview + Accounting Settings + Treasury/Kas & Bank + bank reconciliation + Controlled Journals + Assets/Depreciation + Closing Readiness.
-- Batch 5A: Savings Accounts list/detail + Savings Products list/detail + Savings Integrity Report + Approval Center.
-- Batch 5B: Loan Products → Applications/Eligibility → Contracts/Schedule → Disbursements → Repayments → Penalties/Waiver → Corrections/Reversal/Full Settlement → Accounting/Reconciliation.
-- Batch 6: Release Readiness + Capacity + Backup/Recovery + Database Setup.
-- Final presentation QA: Daily Sales and daily cash Closing migrated; duplicate Savings/Loans sub-navigation removed; Savings Report navigation permission aligned with the page guard; shared focus/touch/mobile/reduced-motion baseline reviewed.
-
-CI evidence recorded on PR #54 includes:
-
-- Batch 3 `32172495222` PASS.
-- Batch 4 `32209668380` PASS.
-- Savings core `32209937855` PASS; Savings full `32211035202` PASS.
-- Loan core `32211185054` PASS; Loan full lifecycle `32211594095` PASS.
-- Batch 6 `32211797399` PASS.
-- Final Prompt 2 head is gated by the latest Application CI run associated with the branch head.
+- approved KopdesKu master logo geometry;
+- canonical brand color palette;
+- favicon / PWA / app identity assets;
+- Poppins product font family;
+- semantic status colors;
+- maker-checker and security presentation semantics;
+- minimum touch/accessibility principles.
 
 ## Safety boundary
 
-No route contract, RBAC business semantics, API/database contract, Supabase/D1 schema, server action behavior, transaction posting, idempotency, maker-checker, inventory/procurement/savings/loan/accounting business logic is intentionally changed by design-system work. Latest production business hotfixes are inherited unchanged from `main` before release.
+Presentation work must not intentionally change route business contracts, RBAC business semantics, API/database contracts, Supabase/D1 schemas, server action behavior, transaction posting, idempotency, maker-checker controls, or inventory/procurement/savings/loan/accounting business logic. Business hotfixes from `main` remain authoritative.
 
-Operational certification remains separate from presentation completion. Procurement/AP and Loan remain CODE-FLOW VERIFIED · HUMAN UAT PENDING; Finance Closing human UAT remains pending. Real-data GO remains NO-GO until pending human UAT and final release/PWA smoke are complete. PR #54 must remain DRAFT and must not be deployed to production before those gates are complete.
+## Relationship to v1.3
+
+`KopdesKu UX Refinement & Navigation Pack v1.3` is the additive usability layer on top of v1.2. It refines typography scale/weight, operational density, navigation hierarchy, Simpan Pinjam task architecture, transaction launchers, responsive/mobile presentation, progressive disclosure, and mobile card patterns. v1.3 **does not redraw the logo, recolor the brand, or replace transaction engines**.
