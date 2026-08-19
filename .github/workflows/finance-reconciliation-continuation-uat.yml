@@ -49,14 +49,20 @@ jobs:
 
           BASE=os.environ['UAT_BASE_URL'].rstrip('/')
           RECON=os.environ['RECONCILIATION_NUMBER']
-          stage='login'; matched_count=0; recon_url=''
+          stage='login'; matched_count=0; recon_url=''; starting_unmatched=-1
 
           def out(k,v):
               with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
                   f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
 
-          def normalized_body(page):
+          def body(page):
               return re.sub(r'\s+',' ',page.locator('body').inner_text().replace('\u00a0',' '))
+
+          def unmatched(page):
+              m=re.search(r'UNMATCHED\s*(\d+)\s*dari\s*4',body(page),re.I)
+              if not m:
+                  raise RuntimeError('Could not read unmatched counter')
+              return int(m.group(1))
 
           with sync_playwright() as p:
               browser=p.chromium.launch(headless=True)
@@ -74,75 +80,65 @@ jobs:
                   expect(link).to_be_visible()
                   link.click()
                   page.wait_for_url(re.compile(r'.*/finance/treasury/reconciliation/[^?]+(?:\?.*)?$'),timeout=20000)
+                  page.wait_for_load_state('networkidle')
                   recon_url=page.url.split('?')[0]
                   expect(page.get_by_role('heading',name=RECON)).to_be_visible()
                   expect(page.get_by_text('DRAFT',exact=True).first).to_be_visible()
-                  body=normalized_body(page)
-                  if not re.search(r'STATEMENT CLOSING\s*-Rp\s*15\.000',body,re.I):
-                      raise RuntimeError('Statement closing is not -Rp15.000')
-                  if not re.search(r'SYSTEM CLOSING\s*-Rp\s*15\.000',body,re.I):
-                      raise RuntimeError('System closing is not -Rp15.000')
-                  if not re.search(r'DIFFERENCE\s*Rp\s*0',body,re.I):
-                      raise RuntimeError('Difference is not Rp0')
-                  if not re.search(r'UNMATCHED\s*4\s*dari\s*4',body,re.I):
-                      raise RuntimeError('Expected 4 unmatched items before continuation')
+                  text=body(page)
+                  if not re.search(r'STATEMENT CLOSING\s*-Rp\s*15\.000',text,re.I): raise RuntimeError('Statement closing is not -Rp15.000')
+                  if not re.search(r'SYSTEM CLOSING\s*-Rp\s*15\.000',text,re.I): raise RuntimeError('System closing is not -Rp15.000')
+                  if not re.search(r'DIFFERENCE\s*Rp\s*0',text,re.I): raise RuntimeError('Difference is not Rp0')
+                  starting_unmatched=unmatched(page)
+                  if starting_unmatched < 0 or starting_unmatched > 4: raise RuntimeError(f'Unexpected unmatched count {starting_unmatched}')
 
                   stage='match-items'
-                  while True:
+                  while unmatched(page) > 0:
                       buttons=page.get_by_role('button',name='Match',exact=True)
                       if buttons.count()==0:
-                          break
+                          raise RuntimeError(f'No Match button while {unmatched(page)} item(s) remain unmatched')
+                      before=unmatched(page)
                       buttons.first.click()
                       page.wait_for_url(re.compile(r'.*\?status=item-updated$'),timeout=20000)
+                      page.wait_for_load_state('networkidle')
+                      # Explicit clean reload prevents a transient Server Action DOM from hiding the next control.
+                      page.goto(recon_url,wait_until='networkidle')
+                      after=unmatched(page)
+                      if after != before-1:
+                          raise RuntimeError(f'Expected unmatched {before-1} after Match, got {after}')
                       matched_count+=1
-                      if matched_count>10:
-                          raise RuntimeError('Unexpected reconciliation item loop >10')
-                  body=normalized_body(page)
-                  if not re.search(r'UNMATCHED\s*0\s*dari\s*4',body,re.I):
-                      raise RuntimeError('Unmatched count is not 0/4 after matching')
+                      if matched_count>4: raise RuntimeError('Matched more than four reconciliation items')
+
                   expect(page.get_by_text('Ready to reconcile',exact=True)).to_be_visible()
+                  if unmatched(page)!=0: raise RuntimeError('Unmatched count is not zero')
 
                   stage='complete-reconciliation'
                   page.get_by_role('button',name='Complete Reconciliation').click()
                   page.wait_for_url(re.compile(r'.*\?status=reconciled$'),timeout=20000)
+                  page.wait_for_load_state('networkidle')
                   expect(page.get_by_text('RECONCILED',exact=True).first).to_be_visible()
                   expect(page.get_by_text('Rekonsiliasi selesai',exact=True)).to_be_visible()
-                  body=normalized_body(page)
-                  if not re.search(r'DIFFERENCE\s*Rp\s*0',body,re.I):
-                      raise RuntimeError('Final reconciliation difference is not Rp0')
-                  if not re.search(r'UNMATCHED\s*0\s*dari\s*4',body,re.I):
-                      raise RuntimeError('Final unmatched count is not 0/4')
+                  text=body(page)
+                  if not re.search(r'DIFFERENCE\s*Rp\s*0',text,re.I): raise RuntimeError('Final difference is not Rp0')
+                  if not re.search(r'UNMATCHED\s*0\s*dari\s*4',text,re.I): raise RuntimeError('Final unmatched is not 0/4')
                   page.screenshot(path='/tmp/kdkmp-finance-continuation/reconciliation-pass.png',full_page=True)
 
                   stage='closing-readiness'
                   page.goto(BASE+'/finance/closing-readiness?month=2026-08',wait_until='networkidle')
                   expect(page.get_by_role('heading',name='Kesiapan Tutup Buku')).to_be_visible()
                   expect(page.get_by_text('PERLU DICEK',exact=True)).to_be_visible()
-                  body=normalized_body(page)
-                  labels=[
-                      'Jurnal seimbang',
-                      'Tidak ada jurnal yang masih menggantung',
-                      'Pencocokan rekening bank selesai',
-                      'Penyusutan aset bulan ini selesai',
-                      'Tidak ada shift teller yang masih OPEN',
-                  ]
-                  for label in labels:
-                      if label not in body:
-                          raise RuntimeError(f'Closing-readiness label missing: {label}')
-                  if '1/1 rekening sudah direkonsiliasi.' not in body:
-                      raise RuntimeError('Bank reconciliation readiness did not become 1/1')
-                  if '1 jurnal belum selesai.' not in body:
-                      raise RuntimeError('Expected one unfinished controlled journal blocker')
-                  if '1 aset masih menunggu penyusutan.' not in body:
-                      raise RuntimeError('Expected one depreciation blocker')
-                  if '1 shift teller masih OPEN' not in body:
-                      raise RuntimeError('Expected one OPEN teller shift blocker')
+                  text=body(page)
+                  for label in ['Jurnal seimbang','Tidak ada jurnal yang masih menggantung','Pencocokan rekening bank selesai','Penyusutan aset bulan ini selesai','Tidak ada shift teller yang masih OPEN']:
+                      if label not in text: raise RuntimeError(f'Closing-readiness label missing: {label}')
+                  if '1/1 rekening sudah direkonsiliasi.' not in text: raise RuntimeError('Bank reconciliation readiness did not become 1/1')
+                  if '1 jurnal belum selesai.' not in text: raise RuntimeError('Expected one unfinished controlled journal blocker')
+                  if '1 aset masih menunggu penyusutan.' not in text: raise RuntimeError('Expected one depreciation blocker')
+                  if '1 shift teller masih OPEN' not in text: raise RuntimeError('Expected one OPEN teller shift blocker')
                   page.screenshot(path='/tmp/kdkmp-finance-continuation/closing-readiness-pass.png',full_page=True)
 
-                  out('failure_stage','');out('matched_count',matched_count);out('reconciliation_url',recon_url)
+                  out('failure_stage','');out('starting_unmatched',starting_unmatched);out('matched_count',matched_count);out('reconciliation_url',recon_url)
                   print('Finance existing reconciliation continuation PASS')
               except Exception:
-                  out('failure_stage',stage);out('matched_count',matched_count);out('reconciliation_url',recon_url)
+                  out('failure_stage',stage);out('starting_unmatched',starting_unmatched);out('matched_count',matched_count);out('reconciliation_url',recon_url)
                   try: page.screenshot(path='/tmp/kdkmp-finance-continuation/failure.png',full_page=True)
                   except Exception: pass
                   traceback.print_exc();raise
@@ -153,18 +149,20 @@ jobs:
       - name: Record PASS
         if: success()
         env:
+          STARTING: ${{ steps.uat.outputs.starting_unmatched }}
           MATCHED: ${{ steps.uat.outputs.matched_count }}
         run: |
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Finance Bank Reconciliation continuation PASS. Run \`$GITHUB_RUN_ID\`. Existing session \`REC-MSZS1YQV-7E78E\` was continued rather than duplicated: \`$MATCHED\` existing bank items matched, final status RECONCILED, statement/system closing -Rp15.000, difference Rp0, unmatched 0/4. `/finance/closing-readiness?month=2026-08` correctly shows bank reconciliation 1/1 complete while remaining PERLU DICEK for 1 unfinished controlled journal, 1 asset awaiting depreciation, and 1 OPEN teller shift. No period CLOSE/LOCK and no balance/journal posting were performed."
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Finance Bank Reconciliation continuation PASS. Run \`$GITHUB_RUN_ID\`. Existing session \`REC-MSZS1YQV-7E78E\` resumed safely from \`$STARTING\` unmatched item(s); \`$MATCHED\` remaining item(s) were matched. Final status RECONCILED, statement/system closing -Rp15.000, difference Rp0, unmatched 0/4. `/finance/closing-readiness?month=2026-08` now shows bank reconciliation 1/1 complete while remaining PERLU DICEK for 1 unfinished controlled journal, 1 asset awaiting depreciation, and 1 OPEN teller shift. No period CLOSE/LOCK and no balance/journal posting were performed."
 
       - name: Record failure
         if: failure()
         env:
           STAGE: ${{ steps.uat.outputs.failure_stage }}
+          STARTING: ${{ steps.uat.outputs.starting_unmatched }}
           MATCHED: ${{ steps.uat.outputs.matched_count }}
           URL: ${{ steps.uat.outputs.reconciliation_url }}
         run: |
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Finance existing reconciliation continuation did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; matched this run \`${MATCHED:-0}\`; URL \`${URL:-none}\`. Do not create another bank reconciliation session; inspect and continue \`REC-MSZS1YQV-7E78E\` only."
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Finance existing reconciliation continuation did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; starting unmatched \`${STARTING:--1}\`; matched this run \`${MATCHED:-0}\`; URL \`${URL:-none}\`. Do not create another bank reconciliation session; inspect and continue \`REC-MSZS1YQV-7E78E\` only."
 
       - name: Upload screenshots
         if: always()
