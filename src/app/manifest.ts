@@ -1,25 +1,2 @@
 import type { MetadataRoute } from "next";
-
-export default function manifest(): MetadataRoute.Manifest {
-  return {
-    name: "KDKMP Kedungharjo",
-    short_name: "KDKMP",
-    description: "Platform operasional Koperasi Desa Merah Putih Kedungharjo.",
-    start_url: "/dashboard",
-    scope: "/",
-    display: "standalone",
-    background_color: "#f5f7fa",
-    theme_color: "#0f1f30",
-    orientation: "any",
-    lang: "id-ID",
-    categories: ["business", "finance", "productivity"],
-    icons: [
-      {
-        src: "/icon.svg",
-        sizes: "any",
-        type: "image/svg+xml",
-        purpose: "any",
-      },
-    ],
-  };
-}
+export default function manifest():MetadataRoute.Manifest{return {name:"KopdesKu — KDKMP Kedungharjo",short_name:"KopdesKu",description:"Platform operasional Koperasi Desa Merah Putih Kedungharjo.",start_url:"/dashboard",scope:"/",display:"standalone",background_color:"#F8FAFC",theme_color:"#0F172A",orientation:"any",lang:"id-ID",categories:["business","finance","productivity"],icons:[{src:"/brand/kopdesku/icon-192.png",sizes:"192x192",type:"image/png",purpose:"any"},{src:"/brand/kopdesku/kopdesku-mark.svg",sizes:"any",type:"image/svg+xml",purpose:"any"}]}}
