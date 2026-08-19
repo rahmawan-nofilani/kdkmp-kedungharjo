@@ -19,6 +19,7 @@ type IconComponent=(props:IconProps)=>ReactNode;
 type NavItem={label:string;href:string;description?:string;permission?:string;anyPermissions?:string[];badge?:string;icon?:IconComponent;exact?:boolean};
 type NavGroup={label?:string;items:NavItem[]};
 type NavModule={label:string;icon:IconComponent;direct?:NavItem;groups?:NavGroup[]};
+type SearchParamsLike={get:(name:string)=>string|null;toString:()=>string};
 
 const simpanPinjamPermissions=["SAVINGS_PRODUCT_VIEW","SAVINGS_ACCOUNT_VIEW","SAVINGS_TX_VIEW","SAVINGS_TRANSACTION_VIEW","LOAN_PRODUCT_VIEW","LOAN_APPLICATION_VIEW","LOAN_CONTRACT_VIEW","LOAN_DISBURSEMENT_VIEW","LOAN_REPAYMENT_VIEW","LOAN_PENALTY_VIEW","LOAN_REPORT_VIEW"];
 
@@ -90,11 +91,11 @@ const transactionActions:NavItem[]=[
 const noShell=new Set(["/","/login"]);
 function allowed(item:NavItem,permissions:Set<string>){if(item.permission&&!permissions.has(item.permission))return false;if(item.anyPermissions?.length&&!item.anyPermissions.some(code=>permissions.has(code)))return false;return true}
 function baseHref(href:string){return href.split("?")[0]||href}
-function itemActive(pathname:string,searchParams:URLSearchParams,item:NavItem){
+function itemActive(pathname:string,searchParams:SearchParamsLike,item:NavItem){
   const [href,query]=item.href.split("?");
   const pathMatches=pathname===href||pathname.startsWith(`${href}/`);
   if(!pathMatches)return false;
-  if(query){const expected=new URLSearchParams(query);for(const [key,value] of expected.entries()){if(searchParams.get(key)!==value)return false}return true}
+  if(query){const expected=new URLSearchParams(query);let matches=true;expected.forEach((value,key)=>{if(searchParams.get(key)!==value)matches=false});return matches}
   if(item.exact)return pathname===href&&searchParams.toString()==="";
   return true;
 }
