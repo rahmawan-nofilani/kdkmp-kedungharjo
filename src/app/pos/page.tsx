@@ -9,6 +9,7 @@ import { PageContainer,PageHeader } from "@/components/ui/page-layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
+import { PosIcon,ReportIcon,ShiftIcon } from "@/components/ui/icons";
 import { PosTerminal } from "./pos-terminal";
 import shell from "./pos-shell.module.css";
 
@@ -26,18 +27,18 @@ export default async function PosPage({searchParams}:PageProps){
   const members=memberResult.data??[];const activeProducts=products.filter((product)=>!product.track_stock||product.stock_qty>0);const successTotal=Number(params.total??"0");
 
   return <PageContainer size="full">
-    <PageHeader eyebrow="Penjualan · POS" title="Kasir" description="Penjualan tunai dengan posting stok, pembayaran, jurnal, audit, dan idempotency dalam satu transaction batch." actions={<div className={shell.statusRow}><Badge tone="success">SHIFT OPEN</Badge><Badge tone="info">CASH ONLY</Badge><Badge>{access.role.name}</Badge></div>}/>
+    <PageHeader eyebrow="Kasir & Penjualan" title="Penjualan" description="Pilih barang, periksa keranjang, lalu selesaikan pembayaran tunai." actions={<div className={shell.statusRow}><Badge tone="success"><ShiftIcon size={14}/> Shift Aktif</Badge><Badge tone="info">Tunai</Badge></div>}/>
 
-    {params.status==="success"?<Alert tone="success" title={params.duplicate?"Transaksi duplikat dicegah":"Transaksi berhasil"}>{params.sale?<><Link href={`/sales/${params.sale}`}>{params.receipt||"Buka struk transaksi"}</Link> · {rupiah(successTotal)}</>:<>{params.receipt||"Receipt tersimpan"} · {rupiah(successTotal)}</>}</Alert>:null}
-    {params.error?<Alert tone="danger" title="Transaksi belum dapat diproses">{params.error}</Alert>:null}
+    {params.status==="success"?<Alert tone="success" title={params.duplicate?"Transaksi yang sama tidak dicatat dua kali":"Penjualan berhasil"}>{params.sale?<><Link href={`/sales/${params.sale}`}>{params.receipt||"Buka struk"}</Link> · {rupiah(successTotal)}</>:<>{params.receipt||"Struk tersimpan"} · {rupiah(successTotal)}</>}</Alert>:null}
+    {params.error?<Alert tone="danger" title="Penjualan belum dapat diproses">{params.error}</Alert>:null}
 
-    <Card className={shell.sectionSpace} density="compact"><div className={shell.contextGrid}><div className={shell.contextItem}><span>Organisasi</span><strong>{access.organization.name}</strong><small>{access.role.name}</small></div><div className={shell.contextItem}><span>Gudang aktif</span><strong>{warehouse.code} · {warehouse.name}</strong><small>{activeProducts.length} produk siap dijual</small></div><div className={shell.contextItem}><span>Kas awal shift</span><strong>{rupiah(shift.opening_cash_amount)}</strong><small>Shift teller aktif</small></div></div></Card>
+    <Card className={shell.sectionSpace} density="compact"><div className={shell.contextGrid}><div className={shell.contextItem}><span><PosIcon size={16}/> Kasir</span><strong>{access.profile.fullName}</strong><small>{access.role.name}</small></div><div className={shell.contextItem}><span>Gudang</span><strong>{warehouse.name}</strong><small>{activeProducts.length} produk tersedia</small></div><div className={shell.contextItem}><span>Kas Awal</span><strong>{rupiah(shift.opening_cash_amount)}</strong><small>shift aktif</small></div></div></Card>
 
     <div className={shell.sectionSpace}><PosTerminal products={products} members={members} warehouseName={warehouse.name}/></div>
 
     <Card className={shell.sectionSpace}>
-      <div className={shell.recentHeader}><div><h2>Transaksi terakhir teller ini</h2><p>Audit cepat untuk receipt dan status pembayaran terbaru.</p></div><Link href="/reports/daily-sales">Buka laporan harian →</Link></div>
-      {recentSales.length?<div className={shell.recentGrid}>{recentSales.map((sale)=><Link className={shell.recentCard} href={`/sales/${sale.id}`} key={sale.id}><span>{sale.receipt_number}</span><strong>{rupiah(sale.total_amount)}</strong><small>{new Date(sale.sold_at).toLocaleString("id-ID",{timeZone:"Asia/Jakarta"})} · {sale.payment_status}</small></Link>)}</div>:<div className={shell.empty}>Belum ada penjualan pada teller ini.</div>}
+      <div className={shell.recentHeader}><div><h2>Penjualan Terakhir</h2><p>Transaksi terbaru dari kasir ini.</p></div><Link href="/reports/daily-sales"><ReportIcon size={16}/> Laporan Penjualan</Link></div>
+      {recentSales.length?<div className={shell.recentGrid}>{recentSales.map((sale)=><Link className={shell.recentCard} href={`/sales/${sale.id}`} key={sale.id}><span>{sale.receipt_number}</span><strong>{rupiah(sale.total_amount)}</strong><small>{new Date(sale.sold_at).toLocaleString("id-ID",{timeZone:"Asia/Jakarta"})} · {sale.payment_status==="PAID"?"Lunas":sale.payment_status}</small></Link>)}</div>:<div className={shell.empty}>Belum ada penjualan pada shift ini.</div>}
     </Card>
   </PageContainer>;
 }
