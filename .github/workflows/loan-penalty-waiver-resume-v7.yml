@@ -1,0 +1,279 @@
+name: Loan Penalty Waiver Resume V7
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  resume:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-PENALTY-WAIVER-V7' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 18
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      APP_ID: d9ab6def-a632-40ab-836d-50506cbc2e64
+      APP_NO: PIN-20260819-D9AB6DEF
+      PRODUCT_NAME: UAT Penalty & Waiver
+      AGREEMENT_DATE: '2026-07-01'
+      PRINCIPAL: '100000'
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard credentials
+        run: |
+          test -n "$UAT_ADMINUNIT_PASSWORD"
+          test -n "$UAT_SUPERADMIN_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Resume approved application through penalty waiver
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-loan-penalty-v7
+          python <<'PY'
+          import os,re,traceback
+          from playwright.sync_api import sync_playwright,expect
+
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          APP_ID=os.environ['APP_ID']; APP_NO=os.environ['APP_NO']; PNAME=os.environ['PRODUCT_NAME']
+          AGREEMENT=os.environ['AGREEMENT_DATE']; PRINCIPAL=int(os.environ['PRINCIPAL']); RUN=os.environ['GITHUB_RUN_ID']
+          APP_URL=f'{BASE}/loans/applications/{APP_ID}'
+          stage='setup'; contract_no=''; contract_url=''; disb_no=''; disb_url=''; waiver_no=''; waiver_amount=0
+
+          def out(k,v):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
+          def login(browser,email,password):
+              ctx=browser.new_context(); page=ctx.new_page(); page.set_default_timeout(15000)
+              page.goto(BASE+'/login',wait_until='networkidle')
+              page.get_by_label('Email',exact=True).fill(email)
+              page.get_by_label('Kata sandi',exact=True).fill(password)
+              page.get_by_role('button',name='Masuk ke KDKMP').click()
+              page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+              return ctx,page
+          def body(page): return re.sub(r'\s+',' ',page.locator('body').inner_text().replace('\u00a0',' '))
+          def select_containing(select,needle):
+              opts=select.locator('option')
+              for i in range(opts.count()):
+                  o=opts.nth(i); txt=(o.inner_text() or '').strip(); value=o.get_attribute('value') or ''
+                  if value and needle in txt:
+                      select.select_option(value=value); return txt
+              raise RuntimeError(f'Option containing {needle!r} not found')
+          def rupiah(text):
+              m=re.search(r'Rp\s*([0-9.]+)',text.replace('\u00a0',' '),re.I)
+              return int(re.sub(r'\D','',m.group(1))) if m else 0
+          def choose_cash_treasury(select):
+              opts=select.locator('option')
+              for i in range(opts.count()):
+                  o=opts.nth(i); txt=(o.inner_text() or '').strip(); value=o.get_attribute('value') or ''
+                  if value and txt.startswith('CASH ·') and rupiah(txt)>=PRINCIPAL:
+                      select.select_option(value=value); return txt
+              raise RuntimeError('No ACTIVE CASH treasury with displayed balance >= Rp100.000')
+          def clean(page,url): page.goto(url,wait_until='networkidle')
+
+          with sync_playwright() as p:
+              b=p.chromium.launch(headless=True); active=None
+              try:
+                  # 1. Resume the exact existing application. No new application is created.
+                  stage='application-approve'
+                  sc,page=login(b,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  clean(page,APP_URL)
+                  expect(page.get_by_role('heading',name=APP_NO)).to_be_visible()
+                  text=body(page)
+                  if 'MENUNGGU PEMERIKSA' in text and page.get_by_role('button',name='Mulai Pemeriksaan').count():
+                      page.get_by_role('button',name='Mulai Pemeriksaan').click()
+                      page.wait_for_url(re.compile(r'.*\?status=reviewing$'),timeout=20000)
+                      clean(page,APP_URL)
+                  text=body(page)
+                  if 'SEDANG DIPERIKSA' in text and page.get_by_role('button',name='Setujui Pengajuan').count():
+                      page.get_by_role('button',name='Setujui Pengajuan').click()
+                      page.wait_for_url(re.compile(r'.*\?status=approved$'),timeout=20000)
+                      clean(page,APP_URL)
+                  if 'DISETUJUI' not in body(page): raise RuntimeError('Existing penalty application is not APPROVED after checker action')
+                  sc.close()
+
+                  # 2. Historical contract through normal application->contract UI.
+                  stage='contract'
+                  ac,page=login(b,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  page.goto(BASE+'/loans/contracts',wait_until='networkidle')
+                  rows=page.locator('tr').filter(has_text=PNAME).filter(has_text='Anggota Demo Dua')
+                  if rows.count():
+                      link=rows.first.locator('a').filter(has_text='Buka').first
+                      if link.count():
+                          href=link.get_attribute('href'); contract_url=BASE+href if href else ''
+                          if contract_url:
+                              clean(page,contract_url); contract_no=page.locator('h1').inner_text().strip()
+                  if not contract_no:
+                      page.goto(BASE+'/loans/contracts',wait_until='networkidle')
+                      page.get_by_text('+ Bentuk Kontrak',exact=True).click()
+                      cf=page.locator('form').filter(has=page.get_by_role('button',name='Bentuk Kontrak & Jadwal')).first
+                      expect(cf).to_be_visible()
+                      select_containing(cf.locator('select[name="application_id"]'),APP_NO)
+                      cf.locator('input[name="agreement_date"]').fill(AGREEMENT)
+                      cf.get_by_role('button',name='Bentuk Kontrak & Jadwal').click()
+                      page.wait_for_url(re.compile(r'.*/loans/contracts/[^?]+\?status=created$'),timeout=20000)
+                      contract_url=page.url.split('?')[0]; clean(page,contract_url); contract_no=page.locator('h1').inner_text().strip()
+                  if not contract_no: raise RuntimeError('Penalty contract number empty')
+                  schedule_rows=page.locator('table tbody tr').count()
+                  if schedule_rows!=5: raise RuntimeError(f'Expected 5 WEEKLY schedule rows, got {schedule_rows}')
+                  if '2026-07-08' not in body(page): raise RuntimeError('Historical first due date 2026-07-08 not visible')
+                  ac.close()
+
+                  # 3. Official disbursement, resume existing draft/submitted/approved if any.
+                  stage='disbursement-maker'
+                  ac,page=login(b,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  page.goto(BASE+'/loans/disbursements',wait_until='networkidle')
+                  rows=page.locator('tr').filter(has_text='Anggota Demo Dua').filter(has_text=PNAME)
+                  if rows.count():
+                      link=rows.first.locator('a').filter(has_text='Buka').first
+                      if link.count():
+                          href=link.get_attribute('href'); disb_url=BASE+href if href else ''
+                          if disb_url: clean(page,disb_url); disb_no=page.locator('h1').inner_text().strip()
+                  if not disb_no:
+                      page.goto(BASE+'/loans/disbursements',wait_until='networkidle')
+                      page.get_by_text('+ Buat Permintaan Pencairan',exact=True).click()
+                      df=page.locator('form').filter(has=page.get_by_role('button',name='Buat Draft Pencairan')).first
+                      expect(df).to_be_visible()
+                      select_containing(df.locator('select[name="contract_id"]'),contract_no)
+                      choose_cash_treasury(df.locator('select[name="treasury_account_id"]'))
+                      ch=df.locator('select[name="channel"]')
+                      if ch.count(): ch.select_option('CASH')
+                      df.locator('input[name="recipient_name"]').fill('Anggota Demo Dua')
+                      df.locator('input[name="request_note"]').fill(f'Penalty waiver fixture {RUN}')
+                      df.get_by_role('button',name='Buat Draft Pencairan').click()
+                      page.wait_for_url(re.compile(r'.*/loans/disbursements/[^?]+\?status=created$'),timeout=20000)
+                      disb_url=page.url.split('?')[0]; clean(page,disb_url); disb_no=page.locator('h1').inner_text().strip()
+                  if page.get_by_role('button',name='Ajukan Pencairan').count():
+                      page.get_by_role('button',name='Ajukan Pencairan').click(); page.wait_for_url(re.compile(r'.*\?status=submitted$'),timeout=20000); clean(page,disb_url)
+                  ac.close()
+
+                  stage='disbursement-checker'
+                  sc,page=login(b,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  clean(page,disb_url)
+                  if page.get_by_role('button',name='Setujui Pencairan').count():
+                      page.get_by_role('button',name='Setujui Pencairan').click(); page.wait_for_url(re.compile(r'.*\?status=approved$'),timeout=20000); clean(page,disb_url)
+                  if page.get_by_role('button',name='Eksekusi Pencairan').count():
+                      page.locator('input[name="execution_reference"]').fill(f'UAT-PENALTY-{RUN}')
+                      page.get_by_role('button',name='Eksekusi Pencairan').click(); page.wait_for_url(re.compile(r'.*\?status=disbursed$'),timeout=30000); clean(page,disb_url)
+                  if 'DISBURSED' not in body(page): raise RuntimeError('Penalty fixture disbursement is not DISBURSED')
+                  sc.close()
+
+                  # 4. Current-WIB penalty assessment and ADMIN_UNIT waiver maker.
+                  stage='penalty-assess'
+                  ac,page=login(b,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  page.goto(BASE+'/loans/penalties',wait_until='networkidle')
+                  crow=page.locator('tr').filter(has_text=contract_no).filter(has=page.get_by_role('button',name='Perbarui Denda'))
+                  if crow.count():
+                      crow.first.get_by_role('button',name='Perbarui Denda').click(); page.wait_for_url(re.compile(r'.*/loans/penalties\?status=assessed$'),timeout=25000)
+                  page.goto(BASE+'/loans/penalties',wait_until='networkidle')
+
+                  stage='waiver-maker'
+                  # Reuse any existing waiver for this contract before creating another.
+                  wrows=page.locator('tr').filter(has_text=contract_no).filter(has_text=re.compile(r'DRAFT|SUBMITTED|APPROVED'))
+                  existing_waiver=None
+                  for i in range(wrows.count()):
+                      r=wrows.nth(i)
+                      first=(r.locator('td').first.inner_text() or '').strip()
+                      if first.startswith('WVR-'):
+                          existing_waiver=r; break
+                  if existing_waiver is None:
+                      rows=page.locator('tr').filter(has_text=contract_no)
+                      target=None
+                      for i in range(rows.count()):
+                          r=rows.nth(i)
+                          if r.locator('summary').filter(has_text='Ajukan waiver').count(): target=r; break
+                      if target is None: raise RuntimeError('No assessed positive penalty row with waiver action')
+                      due=rupiah(target.locator('td').nth(6).inner_text())
+                      if due<=0: raise RuntimeError('Penalty due is not positive')
+                      waiver_amount=min(1000,due)
+                      target.locator('summary').filter(has_text='Ajukan waiver').click()
+                      target.locator('input[name="requested_amount"]').fill(str(waiver_amount))
+                      target.locator('input[name="reason"]').fill('Synthetic UAT maker-checker penalty waiver certification')
+                      target.get_by_role('button',name='Buat Draft Waiver').click(); page.wait_for_url(re.compile(r'.*/loans/penalties\?status=waiver-created.*'),timeout=20000)
+                      page.goto(BASE+'/loans/penalties',wait_until='networkidle')
+                      wrows=page.locator('tr').filter(has_text=contract_no).filter(has_text='DRAFT')
+                      if not wrows.count(): raise RuntimeError('Created waiver DRAFT row not found')
+                      existing_waiver=wrows.first
+                  waiver_no=(existing_waiver.locator('td').first.inner_text() or '').strip().split()[0]
+                  if not waiver_amount:
+                      try: waiver_amount=rupiah(existing_waiver.locator('td').nth(2).inner_text())
+                      except Exception: waiver_amount=0
+                  if existing_waiver.get_by_text('DRAFT',exact=True).count() and existing_waiver.get_by_role('button',name='Ajukan').count():
+                      existing_waiver.get_by_role('button',name='Ajukan').click(); page.wait_for_url(re.compile(r'.*/loans/penalties\?status=submitted.*'),timeout=20000)
+                  ac.close()
+
+                  # 5. Different SUPER_ADMIN approves exact waiver.
+                  stage='waiver-checker'
+                  sc,page=login(b,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  page.goto(BASE+'/loans/penalties',wait_until='networkidle')
+                  wrow=page.locator('tr').filter(has_text=waiver_no).first; expect(wrow).to_be_visible()
+                  if wrow.get_by_text('SUBMITTED',exact=True).count():
+                      note=wrow.locator('input[name="decision_note"]').first
+                      if note.count(): note.fill('Approved for synthetic UAT certification')
+                      wrow.get_by_role('button',name='Setujui').click(); page.wait_for_url(re.compile(r'.*/loans/penalties\?status=approved$'),timeout=20000)
+                      page.goto(BASE+'/loans/penalties',wait_until='networkidle'); wrow=page.locator('tr').filter(has_text=waiver_no).first
+                  expect(wrow.get_by_text('APPROVED',exact=True)).to_be_visible(timeout=15000)
+                  page.screenshot(path='/tmp/kdkmp-loan-penalty-v7/pass.png',full_page=True)
+                  sc.close()
+
+                  out('failure_stage',''); out('application_number',APP_NO); out('contract_number',contract_no); out('disbursement_number',disb_no); out('waiver_number',waiver_no); out('waiver_amount',waiver_amount)
+                  print('Loan penalty waiver focused resume PASS')
+              except Exception:
+                  out('failure_stage',stage); out('application_number',APP_NO); out('contract_number',contract_no); out('disbursement_number',disb_no); out('waiver_number',waiver_no); out('waiver_amount',waiver_amount)
+                  if active:
+                      try: active.screenshot(path='/tmp/kdkmp-loan-penalty-v7/failure.png',full_page=True)
+                      except Exception: pass
+                  traceback.print_exc(); raise
+              finally:b.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        env:
+          APP: ${{ steps.uat.outputs.application_number }}
+          CONTRACT: ${{ steps.uat.outputs.contract_number }}
+          DISB: ${{ steps.uat.outputs.disbursement_number }}
+          WAIVER: ${{ steps.uat.outputs.waiver_number }}
+          AMOUNT: ${{ steps.uat.outputs.waiver_amount }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan non-zero penalty + waiver maker-checker UAT PASS. Focused resume run \`$GITHUB_RUN_ID\`. Existing \`UAT-PENALTY\` product and application \`$APP\` were reused; no duplicate product/application and F001 untouched. Different SUPER_ADMIN approved application; official historical WEEKLY contract \`$CONTRACT\` and CASH disbursement \`$DISB\` were completed; current-WIB engine assessed positive overdue penalty; ADMIN_UNIT submitted waiver \`$WAIVER\` Rp$AMOUNT and different SUPER_ADMIN approved it. No direct schedule/status SQL manipulation."
+
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          APP: ${{ steps.uat.outputs.application_number }}
+          CONTRACT: ${{ steps.uat.outputs.contract_number }}
+          DISB: ${{ steps.uat.outputs.disbursement_number }}
+          WAIVER: ${{ steps.uat.outputs.waiver_number }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan penalty/waiver focused V7 did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; app \`${APP:-none}\`; contract \`${CONTRACT:-none}\`; disbursement \`${DISB:-none}\`; waiver \`${WAIVER:-none}\`. Resume current fixture only; do not recreate product/application or alter F001."
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-penalty-waiver-v7-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-penalty-v7/*.png
+          if-no-files-found: ignore
+          retention-days: 14
