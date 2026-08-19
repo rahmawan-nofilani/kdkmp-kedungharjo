@@ -1,59 +1,31 @@
-# KopdesKu Design System v1.0 — Repository Integration
+# KopdesKu Design System — legacy handoff notice
 
-## Source of truth
+This file originally documented the early v1.0 repository integration and temporary-logo policy.
 
-Implementation is based on the user-provided `KopdesKu_Design_System_v1.0_Handoff` package.
+## Superseded
 
-Canonical foundation:
+The canonical source of truth is now **`KopdesKu_Integration_Pack_v1.2_FINAL.zip`** and the repository execution record at `docs/design-system/kopdesku-integration-v1.2.md`.
 
-- Product brand: **KopdesKu**
-- Descriptor: **Integrated Platform**
-- Organization remains: **KDKMP Kedungharjo**
-- Brand red: `#D92323`
-- Deep navy: `#0F172A`
-- Page background: `#F8FAFC`
-- Surface: `#FFFFFF`
-- Primary text: `#0F172A`
-- Muted text: `#64748B`
-- Typography: Poppins 400/500/600/700
-- Spacing base: 4 px
-- Minimum touch target: 44 px
-- Comfortable control height: 48 px
+The former temporary/reference-logo policy is no longer applicable. Production KopdesKu master assets approved by the v1.2 resolution addendum are already stored under `public/brand/kopdesku/` and used by the shared brand component and PWA presentation.
 
-## Reference logo policy
+## Boundary retained from the original handoff
 
-`public/brand/kopdesku/kopdesku-mark-reference.svg` is **not** the production master vector.
-It is a temporary SVG container around a raster crop taken from the approved handoff reference board so the real KopdesKu identity can be used during integration.
+Design-system work may refine presentation only:
 
-When the final master SVG is supplied, replace the reference asset without changing the component API.
-Do not trace/rebuild the reference raster and call it the official master.
+- design tokens and typography
+- branding and production logo assets
+- shared UI components
+- AppShell/navigation
+- responsive page composition and visual states
 
-## Migration boundary
+It must not intentionally change:
 
-KEEP:
-
-- routes and URLs
-- authentication and RBAC
-- Supabase/D1 contracts
-- server actions
-- idempotency
-- maker-checker rules
+- routes or authentication contracts
+- RBAC business semantics
+- Supabase/D1 schema or API contracts
+- server actions and transaction state machines
+- idempotency and maker-checker rules
 - audit trails
-- transaction state machines
-- accounting and financial posting
+- inventory/procurement/savings/loan/accounting posting logic
 
-REFINE/REPLACE only in the presentation layer:
-
-- design tokens
-- typography
-- logo/branding
-- core UI components
-- application shell
-- menu/submenu hierarchy
-- responsive navigation
-- page composition and visual states
-
-## Parallel rollout
-
-Production UAT remains on the stable production deployment while this branch evolves independently.
-Validated business modules are migrated visually in a rolling sequence, followed by regression UAT before production release.
+For current migration status, CI evidence, and release boundary, use `kopdesku-integration-v1.2.md` and PR #54.
