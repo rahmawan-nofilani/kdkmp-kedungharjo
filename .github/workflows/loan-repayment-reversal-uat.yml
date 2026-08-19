@@ -1,0 +1,160 @@
+name: Loan Repayment Reversal UAT
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  loan-repayment-reversal-uat:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-REPAYMENT-REVERSAL' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 10
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+      REPAYMENT_NUMBER: ANG-20260819-9D779B78
+      CONTRACT_NUMBER: KON-20260819-04F7F835
+
+    steps:
+      - name: Guard credentials
+        run: |
+          test -n "$UAT_ADMINUNIT_PASSWORD"
+          test -n "$UAT_SUPERADMIN_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Execute controlled repayment reversal
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-loan-reversal
+          python <<'PY'
+          import os,re,traceback
+          from playwright.sync_api import sync_playwright,expect
+
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          REPAYMENT=os.environ['REPAYMENT_NUMBER']
+          CONTRACT=os.environ['CONTRACT_NUMBER']
+          RUN_ID=os.environ['GITHUB_RUN_ID']
+          reason=f'UAT koreksi pembayaran {RUN_ID} karena pengujian reversal terkontrol'
+          stage='login-maker'; reversal_no=''
+
+          def out(k,v):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+                  f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
+
+          def login(browser,email,password):
+              ctx=browser.new_context(); page=ctx.new_page(); page.set_default_timeout(15000)
+              page.goto(BASE+'/login',wait_until='networkidle')
+              page.get_by_label('Email',exact=True).fill(email)
+              page.get_by_label('Kata sandi',exact=True).fill(password)
+              page.get_by_role('button',name='Masuk ke KDKMP').click()
+              page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+              return ctx,page
+
+          def choose_repayment(select):
+              opts=select.locator('option')
+              for i in range(opts.count()):
+                  opt=opts.nth(i); text=(opt.inner_text() or '').strip(); value=opt.get_attribute('value') or ''
+                  if value and REPAYMENT in text:
+                      select.select_option(value=value); return
+              raise RuntimeError(f'Posted repayment {REPAYMENT} not eligible for reversal')
+
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True); active=None
+              try:
+                  maker,page=login(browser,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  stage='maker-create'
+                  page.goto(BASE+'/loans/corrections',wait_until='networkidle')
+                  expect(page.get_by_role('heading',name='Koreksi & Pelunasan')).to_be_visible()
+                  form=page.locator('form').filter(has=page.get_by_role('button',name='Buat Draft Reversal')).first
+                  expect(form).to_be_visible()
+                  choose_repayment(form.locator('select[name="repayment_id"]'))
+                  form.locator('textarea[name="reason"]').fill(reason)
+                  form.get_by_role('button',name='Buat Draft Reversal').click()
+                  page.wait_for_url(re.compile(r'.*/loans/corrections\?status=created.*'),timeout=20000)
+                  row=page.locator('table tbody tr').filter(has_text=reason).first
+                  expect(row).to_be_visible()
+                  reversal_no=row.locator('td').nth(0).locator('strong').inner_text().strip()
+                  if not reversal_no: raise RuntimeError('Reversal number empty after create')
+
+                  stage='maker-submit'
+                  row.get_by_role('button',name='Submit').click()
+                  page.wait_for_url(re.compile(r'.*/loans/corrections\?status=submitted$'),timeout=20000)
+                  row=page.locator('table tbody tr').filter(has_text=reversal_no).first
+                  expect(row).to_contain_text('SUBMITTED')
+                  maker.close()
+
+                  checker,page=login(browser,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  stage='checker-approve'
+                  page.goto(BASE+'/loans/corrections',wait_until='networkidle')
+                  row=page.locator('table tbody tr').filter(has_text=reversal_no).first
+                  expect(row).to_be_visible()
+                  expect(row).to_contain_text(REPAYMENT)
+                  row.get_by_role('button',name='Approve').click()
+                  page.wait_for_url(re.compile(r'.*/loans/corrections\?status=approved$'),timeout=20000)
+                  row=page.locator('table tbody tr').filter(has_text=reversal_no).first
+                  expect(row).to_contain_text('APPROVED')
+
+                  stage='execute-reversal'
+                  row.get_by_role('button',name='Eksekusi').click()
+                  page.wait_for_url(re.compile(r'.*/loans/corrections\?status=reversed$'),timeout=30000)
+                  row=page.locator('table tbody tr').filter(has_text=reversal_no).first
+                  expect(row).to_contain_text('REVERSED')
+                  expect(row.get_by_role('link',name='Jurnal reversal')).to_be_visible()
+                  page.screenshot(path='/tmp/kdkmp-loan-reversal/pass.png',full_page=True)
+                  checker.close()
+                  out('failure_stage','');out('reversal_number',reversal_no);out('reason',reason)
+                  print('Loan repayment reversal UAT PASS')
+              except Exception:
+                  out('failure_stage',stage);out('reversal_number',reversal_no);out('reason',reason)
+                  if active is not None:
+                      try: active.screenshot(path='/tmp/kdkmp-loan-reversal/failure.png',full_page=True)
+                      except Exception: pass
+                  traceback.print_exc();raise
+              finally: browser.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        env:
+          REVERSAL: ${{ steps.uat.outputs.reversal_number }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan repayment reversal UAT PASS. Run \`$GITHUB_RUN_ID\`. Original repayment \`ANG-20260819-9D779B78\` remains append-only; reversal \`$REVERSAL\` completed by distinct ADMIN_UNIT maker and SUPER_ADMIN checker/executor through create → submit → approve → execute. Final reversal status REVERSED and reversal D1 journal link is present. Next: verify exact schedule restoration + inverse journal from fresh evidence before settlement."
+
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          REVERSAL: ${{ steps.uat.outputs.reversal_number }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan repayment reversal UAT did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; reversal \`${REVERSAL:-not-created}\`. Inspect current reversal state before any retry; do not create a second reversal for the same repayment."
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-repayment-reversal-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-reversal/*.png
+          if-no-files-found: ignore
+          retention-days: 14
