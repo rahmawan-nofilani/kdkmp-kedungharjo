@@ -1,0 +1,236 @@
+name: Loan Application Contract UAT
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  loan-application-contract:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-APPLICATION-CONTRACT' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 15
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard UAT credentials
+        shell: bash
+        run: |
+          test -n "$UAT_ADMINUNIT_PASSWORD"
+          test -n "$UAT_SUPERADMIN_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Run application to contract flow
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-loan-uat
+          python <<'PY'
+          import os
+          import re
+          import traceback
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from playwright.sync_api import sync_playwright, expect
+
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          ADMIN_EMAIL=os.environ['UAT_ADMINUNIT_EMAIL']
+          ADMIN_PASSWORD=os.environ['UAT_ADMINUNIT_PASSWORD']
+          SUPER_EMAIL=os.environ['UAT_SUPERADMIN_EMAIL']
+          SUPER_PASSWORD=os.environ['UAT_SUPERADMIN_PASSWORD']
+          RUN_ID=os.environ['GITHUB_RUN_ID']
+          tag=f'Loan UAT {RUN_ID}'
+          stage='bootstrap'
+          application_number=''
+          application_url=''
+          contract_number=''
+          contract_url=''
+
+          def output(name,value):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+                  f.write(f'{name}={value}\n')
+
+          def login(browser,email,password):
+              ctx=browser.new_context()
+              page=ctx.new_page()
+              page.set_default_timeout(15000)
+              page.goto(f'{BASE}/login',wait_until='networkidle')
+              page.get_by_label('Email',exact=True).fill(email)
+              page.get_by_label('Kata sandi',exact=True).fill(password)
+              page.get_by_role('button',name='Masuk ke KDKMP').click()
+              page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+              return ctx,page
+
+          def click_href(page,href):
+              link=page.locator(f'a[href="{href}"]').first
+              expect(link).to_be_visible(timeout=15000)
+              link.click()
+              page.wait_for_url(re.compile(re.escape(BASE+href)+r'(?:\?.*)?$'),timeout=20000)
+
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True)
+              active_page=None
+              try:
+                  # MAKER: create, evaluate, submit
+                  stage='maker-login-nav-applications'
+                  maker_ctx,page=login(browser,ADMIN_EMAIL,ADMIN_PASSWORD)
+                  active_page=page
+                  click_href(page,'/loans/applications')
+                  expect(page.get_by_role('heading',name='Pengajuan Pinjaman')).to_be_visible(timeout=15000)
+
+                  stage='application-create'
+                  page.get_by_text('+ Buat Pengajuan',exact=True).click()
+                  form=page.locator('form').filter(has=page.get_by_role('button',name='Simpan Draft Pengajuan')).first
+                  expect(form).to_be_visible(timeout=15000)
+                  form.locator('select[name="member_id"]').select_option(label='DEV-0002 · Anggota Demo Dua')
+                  product_select=form.locator('select[name="product_version_id"]')
+                  product_select.select_option(label=re.compile(r'^F001 · Pinjaman Modal Usaha v1$'))
+                  form.locator('input[name="requested_principal_amount"]').fill('1000000')
+                  form.locator('input[name="requested_tenor_months"]').fill('6')
+                  form.locator('textarea[name="purpose"]').fill(f'Modal usaha sintetis untuk {tag}')
+                  form.locator('input[name="declared_monthly_income_amount"]').fill('5000000')
+                  form.locator('input[name="declared_monthly_obligation_amount"]').fill('0')
+                  form.locator('textarea[name="guarantor_note"]').fill('DEV-0001 Anggota Demo Satu - penjamin sintetis UAT')
+                  form.get_by_role('button',name='Simpan Draft Pengajuan').click()
+                  page.wait_for_url(re.compile(r'.*/loans/applications/[^?]+\?status=created$'),timeout=20000)
+                  application_url=page.url.split('?')[0]
+                  application_number=page.locator('h1').inner_text().strip()
+                  if not application_number.startswith('LN-') and not application_number.startswith('APP-'):
+                      # Keep actual generated number even if convention differs, but reject empty heading.
+                      if not application_number:
+                          raise RuntimeError('Application number could not be captured.')
+
+                  stage='eligibility-check'
+                  page.get_by_role('button',name='Periksa Kelayakan').click()
+                  page.wait_for_url(re.compile(r'.*/loans/applications/[^?]+\?status=checked$'),timeout=20000)
+                  expect(page.get_by_text('LULUS',exact=True).first).to_be_visible(timeout=15000)
+                  # The submit button only appears after PASS.
+                  submit=page.get_by_role('button',name='Kirim ke Pemeriksa')
+                  expect(submit).to_be_visible(timeout=15000)
+
+                  stage='application-submit'
+                  submit.click()
+                  page.wait_for_url(re.compile(r'.*/loans/applications/[^?]+\?status=submitted$'),timeout=20000)
+                  expect(page.get_by_text('MENUNGGU PEMERIKSA',exact=True)).to_be_visible(timeout=15000)
+                  maker_ctx.close()
+
+                  # CHECKER: review + approve
+                  stage='checker-login-nav'
+                  checker_ctx,page=login(browser,SUPER_EMAIL,SUPER_PASSWORD)
+                  active_page=page
+                  click_href(page,'/loans/applications')
+                  page.goto(application_url,wait_until='networkidle')
+                  page.wait_for_url(re.compile(r'.*/loans/applications/[^/?]+$'),timeout=20000)
+
+                  stage='review-start'
+                  start=page.get_by_role('button',name='Mulai Pemeriksaan')
+                  expect(start).to_be_visible(timeout=15000)
+                  start.click()
+                  page.wait_for_url(re.compile(r'.*/loans/applications/[^?]+\?status=reviewing$'),timeout=20000)
+
+                  stage='application-approve'
+                  approve=page.get_by_role('button',name='Setujui Pengajuan')
+                  expect(approve).to_be_visible(timeout=15000)
+                  approve.click()
+                  page.wait_for_url(re.compile(r'.*/loans/applications/[^?]+\?status=approved$'),timeout=20000)
+                  expect(page.get_by_text('DISETUJUI',exact=True)).to_be_visible(timeout=15000)
+                  checker_ctx.close()
+
+                  # MAKER: form contract + deterministic schedule. No money movement here.
+                  stage='maker-login-nav-contracts'
+                  maker_ctx,page=login(browser,ADMIN_EMAIL,ADMIN_PASSWORD)
+                  active_page=page
+                  click_href(page,'/loans/contracts')
+                  expect(page.get_by_role('heading',name='Kontrak & Jadwal Angsuran')).to_be_visible(timeout=15000)
+
+                  stage='contract-create'
+                  page.get_by_text('+ Bentuk Kontrak',exact=True).click()
+                  contract_form=page.locator('form').filter(has=page.get_by_role('button',name='Bentuk Kontrak & Jadwal')).first
+                  expect(contract_form).to_be_visible(timeout=15000)
+                  app_select=contract_form.locator('select[name="application_id"]')
+                  app_select.select_option(label=re.compile(re.escape(application_number)))
+                  today=datetime.now(ZoneInfo('Asia/Jakarta')).date().isoformat()
+                  contract_form.locator('input[name="agreement_date"]').fill(today)
+                  contract_form.get_by_role('button',name='Bentuk Kontrak & Jadwal').click()
+                  page.wait_for_url(re.compile(r'.*/loans/contracts/[^?]+\?status=created$'),timeout=20000)
+                  contract_url=page.url.split('?')[0]
+                  contract_number=page.locator('h1').inner_text().strip()
+                  if not contract_number:
+                      raise RuntimeError('Contract number could not be captured.')
+                  expect(page.get_by_text('SIAP DICAIRKAN',exact=True).first).to_be_visible(timeout=15000)
+                  # Schedule must be rendered and contain 6 installment rows / labels.
+                  schedule_rows=page.locator('table tbody tr')
+                  if schedule_rows.count() < 6:
+                      raise RuntimeError(f'Expected at least 6 schedule rows, found {schedule_rows.count()}')
+                  page.screenshot(path='/tmp/kdkmp-loan-uat/loan-application-contract-pass.png',full_page=True)
+                  maker_ctx.close()
+
+                  output('application_number',application_number)
+                  output('application_url',application_url)
+                  output('contract_number',contract_number)
+                  output('contract_url',contract_url)
+                  output('tag',tag)
+                  output('failure_stage','')
+                  print('Loan application -> eligibility -> approval -> contract/schedule PASS')
+              except Exception:
+                  output('failure_stage',stage)
+                  if active_page is not None:
+                      try: active_page.screenshot(path='/tmp/kdkmp-loan-uat/loan-application-contract-failure.png',full_page=True)
+                      except Exception: pass
+                  traceback.print_exc()
+                  raise
+              finally:
+                  browser.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        shell: bash
+        env:
+          APP: ${{ steps.uat.outputs.application_number }}
+          CONTRACT: ${{ steps.uat.outputs.contract_number }}
+          TAG: ${{ steps.uat.outputs.tag }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan UAT batch 1 PASS (synthetic authenticated browser flow). Run \`$GITHUB_RUN_ID\`. Tag \`$TAG\`. Application \`$APP\`: DEV-0002 + F001 Rp1.000.000 / 6 bulan → eligibility PASS → submitted by ADMIN_UNIT → reviewed/approved by different SUPER_ADMIN. Contract \`$CONTRACT\` + deterministic 6-period schedule created by ADMIN_UNIT and is READY/siap dicairkan. No disbursement or Loan accounting movement was executed in this batch. Next: verify Supabase snapshots/events, then controlled disbursement UAT."
+
+      - name: Record failure
+        if: failure()
+        shell: bash
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          APP: ${{ steps.uat.outputs.application_number }}
+          CONTRACT: ${{ steps.uat.outputs.contract_number }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan UAT batch 1 did not PASS. Run \`$GITHUB_RUN_ID\`. Stage: \`${STAGE:-setup}\`; application: \`${APP:-not-created}\`; contract: \`${CONTRACT:-not-created}\`. Inspect evidence before retry; do not create a duplicate application if one already exists."
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-application-contract-uat-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-uat/*.png
+          if-no-files-found: ignore
+          retention-days: 14
