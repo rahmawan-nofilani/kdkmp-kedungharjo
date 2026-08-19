@@ -1,2 +1,36 @@
-/* KopdesKu v1.2 adapter layer: presentation-only overrides for incremental migration. */
-:root{color-scheme:light}body{font-family:var(--kdk-font)}.app-shell,.persistent-content{background:var(--kdk-bg-page);color:var(--kdk-text-primary)}.shell .eyebrow,.dashboard-eyebrow,.panel-label{color:var(--kdk-brand-red)}.primary-link,.primary-button{background:var(--kdk-brand-red);color:var(--kdk-white)}.primary-link:hover,.primary-button:hover:not(:disabled){background:var(--kdk-brand-red-hover)}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:var(--kdk-focus-outline);outline-offset:2px}
+/* KopdesKu v1.3 adapter layer: presentation-only refinement. Brand assets and canonical colors remain unchanged. */
+:root{color-scheme:light}
+body{font-family:var(--kdk-font)}
+.app-shell,.persistent-content{background:var(--kdk-bg-page);color:var(--kdk-text-primary)}
+.shell .eyebrow,.dashboard-eyebrow,.panel-label{color:var(--kdk-brand-red)}
+.primary-link,.primary-button{background:var(--kdk-brand-red);color:var(--kdk-white)}
+.primary-link:hover,.primary-button:hover:not(:disabled){background:var(--kdk-brand-red-hover)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:var(--kdk-focus-outline);outline-offset:2px}
+
+/* Typography normalization for authenticated workspaces. */
+.persistent-content h1{font-size:24px!important;line-height:1.25!important;letter-spacing:-.02em!important}
+.persistent-content h2{font-size:19px!important;line-height:1.3!important;letter-spacing:-.015em!important}
+.persistent-content h3{font-size:16px!important;line-height:1.35!important;letter-spacing:-.01em!important}
+.persistent-content p{line-height:1.55}
+.persistent-content table{font-size:12.5px}
+.persistent-content th{font-size:11.5px}
+.persistent-content .workspace-header{min-height:72px;padding:14px 24px}
+.persistent-content .workspace-content{padding:22px 24px 48px}
+.persistent-content .welcome-panel{padding:22px 24px;border-radius:16px}
+.persistent-content .metric-card{min-height:112px;padding:16px;border-radius:14px}
+.persistent-content .metric-card>span{font-size:10.5px}
+.persistent-content .metric-card strong{font-size:20px}
+.persistent-content .panel-card{padding:18px;border-radius:15px}
+
+@media(max-width:767px){
+  .persistent-content h1{font-size:21px!important}
+  .persistent-content h2{font-size:18px!important}
+  .persistent-content h3{font-size:15px!important}
+  .persistent-content table{font-size:12px}
+  .persistent-content .workspace-header{min-height:62px;padding:10px 14px}
+  .persistent-content .workspace-content{padding:14px 14px 34px}
+  .persistent-content .welcome-panel{padding:16px;border-radius:14px}
+  .persistent-content .metric-card{min-height:96px;padding:14px}
+  .persistent-content .metric-card strong{font-size:18px}
+  .persistent-content .panel-card{padding:15px;border-radius:14px}
+}
