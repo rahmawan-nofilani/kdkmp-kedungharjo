@@ -9,11 +9,13 @@ function money(value:unknown){return `Rp${Number(value||0).toLocaleString("id-ID
 function when(value:string){return new Date(value).toLocaleString("id-ID",{timeZone:"Asia/Jakarta",dateStyle:"medium",timeStyle:"short"});}
 function badge(status:string){return `${styles.badge} ${status==="ACTIVE"?styles.active:status==="PENDING"?styles.pending:status==="REJECTED"?styles.rejected:""}`;}
 
-export function SavingsAccountsTable({accounts,members,userId,canApprove}:{accounts:SavingsAccountRow[];members:MemberRow[];userId:string;canApprove:boolean}){
+export function SavingsAccountsTable({accounts,members,userId,canApprove,intent}:{accounts:SavingsAccountRow[];members:MemberRow[];userId:string;canApprove:boolean;intent?:"deposit"|"withdraw"}){
   const memberMap=new Map(members.map(m=>[m.id,m]));
+  const actionLabel=intent==="deposit"?"Pilih untuk Setoran →":intent==="withdraw"?"Pilih untuk Penarikan →":"Buka Saldo & Mutasi →";
   return <div className={styles.tableWrap}><table><thead><tr><th>Rekening</th><th>Anggota</th><th>Produk / versi</th><th>Status</th><th>Dibuka</th><th>Kontrol</th></tr></thead><tbody>{accounts.map(row=>{
     const member=memberMap.get(row.member_id);const snapshot=row.rule_snapshot||{};const own=row.opened_by===userId;
     const productName=String(snapshot.display_name||snapshot.product_code||"Produk Simpanan");const version=String(snapshot.captured_version||snapshot.version||"—");
+    const detailHref=intent?`/savings/accounts/${row.id}?mode=${intent}`:`/savings/accounts/${row.id}`;
     return <tr key={row.id}>
       <td><strong>{row.account_number}</strong><small>ID {row.id.slice(0,8)}</small></td>
       <td>{member?<><strong>{member.full_name}</strong><small>{member.member_number}</small></>:<><strong>Identitas dibatasi</strong><small>Hak MEMBER_VIEW diperlukan</small></>}</td>
@@ -23,7 +25,7 @@ export function SavingsAccountsTable({accounts,members,userId,canApprove}:{accou
       <td>{row.status==="PENDING"?canApprove&&!own?<div className={styles.actions}>
         <form action={approveSavingsAccountAction}><input type="hidden" name="account_id" value={row.id}/><PendingSubmitButton pendingLabel="Mengaktifkan…">Periksa & Aktifkan</PendingSubmitButton></form>
         <form action={rejectSavingsAccountAction} className={styles.reject}><input type="hidden" name="account_id" value={row.id}/><input name="rejection_reason" required minLength={5} maxLength={300} placeholder="Alasan penolakan"/><PendingSubmitButton pendingLabel="Menolak…">Tolak</PendingSubmitButton></form>
-      </div>:<span className={styles.wait}>Menunggu user lain</span>:row.status==="ACTIVE"?<Link className={styles.detailLink} href={`/savings/accounts/${row.id}`}>Buka Saldo & Mutasi →</Link>:"—"}</td>
+      </div>:<span className={styles.wait}>Menunggu user lain</span>:row.status==="ACTIVE"?<Link className={styles.detailLink} href={detailHref}>{actionLabel}</Link>:"—"}</td>
     </tr>;
   })}</tbody></table></div>;
 }
