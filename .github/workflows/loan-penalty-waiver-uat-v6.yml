@@ -1,0 +1,102 @@
+name: Loan Penalty Waiver UAT V6
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  loan-penalty-waiver-v6:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-PENALTY-WAIVER-V6' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 20
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_MANAGER_EMAIL: nofilanirahmawan@gmail.com
+      UAT_MANAGER_PASSWORD: ${{ secrets.UAT_MANAGER_PASSWORD }}
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      PRODUCT_CODE: UAT-PENALTY
+      PRODUCT_NAME: UAT Penalty & Waiver
+      PRINCIPAL: '100000'
+      AGREEMENT_DATE: '2026-07-01'
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard credentials
+        run: |
+          test -n "$UAT_MANAGER_PASSWORD"
+          test -n "$UAT_ADMINUNIT_PASSWORD"
+          test -n "$UAT_SUPERADMIN_PASSWORD"
+      - name: Checkout main
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+      - name: Resume existing official flow
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-loan-penalty
+          python <<'PYRUN'
+          from pathlib import Path
+          import re,textwrap
+          source=Path('.github/workflows/loan-penalty-waiver-uat.yml').read_text(encoding='utf-8')
+          ms="          python <<'PY'\n"; me="\n          PY\n"
+          start=source.index(ms)+len(ms); end=source.index(me,start)
+          script=textwrap.dedent(source[start:end])
+          reps=[
+            ("expect(page.get_by_role('heading',name='Produk Pinjaman')).to_be_visible()","expect(page.get_by_role('heading',name='Produk Pinjaman',exact=True)).to_be_visible()"),
+            ("if 'ACTIVE' not in body(page): raise RuntimeError('Penalty product is not ACTIVE')","page.wait_for_load_state('networkidle')"),
+            ("page.wait_for_url(re.compile(r'.*\\?status=reviewing$'),timeout=20000)\n                  if page.get_by_role('button',name='Setujui Pengajuan').count():","page.wait_for_url(re.compile(r'.*\\?status=reviewing$'),timeout=20000)\n                      page.goto(app_url,wait_until='networkidle')\n                  if page.get_by_role('button',name='Setujui Pengajuan').count():"),
+          ]
+          for old,new in reps:
+              if old not in script: raise RuntimeError(f'Patch target missing: {old[:90]}')
+              script=script.replace(old,new,1)
+          pattern=r"(?m)^(\s*)save=page\.get_by_role\('button',name='Simpan Draft'\)$"
+          script,count=re.subn(pattern,lambda m:m.group(0)+"\n"+m.group(1)+"if 'DRAFT' in body(page): expect(save).to_be_visible(timeout=15000)",script,count=1)
+          if count!=1: raise RuntimeError(f'Draft wait patch count={count}')
+          exec(compile(script,'loan-penalty-waiver-uat-v6','exec'),{'__name__':'__main__'})
+          PYRUN
+      - name: Record PASS
+        if: success()
+        env:
+          APP: ${{ steps.uat.outputs.application_number }}
+          CONTRACT: ${{ steps.uat.outputs.contract_number }}
+          DISB: ${{ steps.uat.outputs.disbursement_number }}
+          WAIVER: ${{ steps.uat.outputs.waiver_number }}
+          AMOUNT: ${{ steps.uat.outputs.waiver_amount }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan non-zero penalty + waiver maker-checker UAT PASS. Run \`$GITHUB_RUN_ID\`. \`UAT-PENALTY\` v1 APPROVED (0.10%/day, minimum Rp1.000), F001 untouched. Existing application \`$APP\` continued through distinct checker → historical WEEKLY contract \`$CONTRACT\` → CASH disbursement \`$DISB\`; current-WIB assessment produced positive overdue penalty. ADMIN_UNIT submitted waiver \`$WAIVER\` Rp$AMOUNT and different SUPER_ADMIN approved it. No direct schedule/status SQL manipulation."
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          APP: ${{ steps.uat.outputs.application_number }}
+          CONTRACT: ${{ steps.uat.outputs.contract_number }}
+          DISB: ${{ steps.uat.outputs.disbursement_number }}
+          WAIVER: ${{ steps.uat.outputs.waiver_number }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan penalty/waiver UAT V6 did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; application \`${APP:-none}\`; contract \`${CONTRACT:-none}\`; disbursement \`${DISB:-none}\`; waiver \`${WAIVER:-none}\`. Inspect and resume current fixture only."
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-penalty-waiver-v6-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-penalty/*.png
+          if-no-files-found: ignore
+          retention-days: 14
