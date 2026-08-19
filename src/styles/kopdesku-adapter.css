@@ -14,7 +14,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .persistent-content h3{font-size:14px!important;font-weight:500!important;line-height:1.42!important;letter-spacing:0!important}
 .persistent-content h4{font-weight:500!important}
 .persistent-content p{font-size:13px;line-height:1.55}
-.persistent-content strong{font-weight:600}
+.persistent-content strong{font-weight:500}
 .persistent-content label{font-weight:500!important}
 .persistent-content button,.persistent-content a{font-weight:500}
 .persistent-content table{font-size:12px}
@@ -46,4 +46,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .persistent-content button,.persistent-content [role="button"],.persistent-content input[type="submit"]{min-height:44px}
   .persistent-content form{gap:10px}
   .persistent-content details>summary{min-height:44px;display:flex;align-items:center}
+  .kdk-mobile-nav a,.kdk-mobile-nav button{font-size:8.5px!important;letter-spacing:-.015em}
+  .kdk-mobile-nav span{width:100%;max-width:none!important;overflow:visible!important;text-overflow:clip!important;white-space:nowrap!important;text-align:center}
 }
