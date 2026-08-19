@@ -2,7 +2,7 @@
 
 `KopdesKu_Integration_Pack_v1.2_FINAL.zip` superseded v1.1 and remains the canonical foundation for the approved KopdesKu brand identity, logo assets, colors, Poppins foundation, component semantics, and presentation safety boundary.
 
-Prompt 1 (DS-0 through DS-3) and Prompt 2 (all presentation migration batches) are COMPLETE. Original design migration PR #54 was merged and the v1.2 Web/PWA release was deployed with authenticated/PWA smoke PASS. Operational UAT remained a separate workstream; Procurement/AP, Savings, POS, Loan and Finance operational evidence were handled outside this design record. Full August 1–31 accounting month-end certification remains a separate calendar-bound gate and must not be fabricated.
+Prompt 1 (DS-0 through DS-3) and Prompt 2 (all presentation migration batches) are COMPLETE. Original design migration PR #54 was merged and the v1.2 Web/PWA release was deployed with authenticated/PWA smoke PASS. Operational UAT remained a separate workstream. Full August 1–31 accounting month-end certification remains a separate calendar-bound gate and must not be fabricated.
 
 ## Canonical assets locked by v1.2
 
@@ -20,6 +20,4 @@ Presentation work must not intentionally change route business contracts, RBAC b
 
 ## Relationship to v1.3
 
-`KopdesKu UX Refinement & Navigation Pack v1.3` is the additive usability layer on top of v1.2. It refines typography scale/weight, operational density, navigation hierarchy, Simpan Pinjam task architecture, transaction launchers, responsive/mobile presentation, progressive disclosure, and mobile card patterns.
-
-v1.3 **does not redraw the logo, recolor the brand, or replace transaction engines**. See `docs/design-system/kopdesku-ux-refinement-v1.3.md` for the canonical usability layer.
+`KopdesKu UX Refinement & Navigation Pack v1.3` is the additive usability layer on top of v1.2. It refines typography scale/weight, operational density, navigation hierarchy, Simpan Pinjam task architecture, transaction launchers, responsive/mobile presentation, progressive disclosure, and mobile card patterns. v1.3 **does not redraw the logo, recolor the brand, or replace transaction engines**.
