@@ -1,0 +1,158 @@
+name: Final Release Auth PWA Smoke
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  final-release-smoke:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'SMOKE-KDKMP-FINAL-RELEASE' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 12
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard credential
+        run: test -n "$UAT_SUPERADMIN_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Verify PWA surface, authenticated modules, and logout
+        id: smoke
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-final-smoke
+          python <<'PY'
+          import json,os,re,traceback
+          from playwright.sync_api import sync_playwright,expect
+
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          stage='public'; route=''; install_errors=[]
+          routes=[
+            '/dashboard','/members','/inventory','/procurement','/finance',
+            '/savings/accounts','/loans/products','/loans/reports','/approvals','/readiness'
+          ]
+          def out(k,v):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+                  f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
+          def normalized(page):
+              return re.sub(r'\s+',' ',page.locator('body').inner_text().replace('\u00a0',' '))
+          def assert_healthy(page,path):
+              text=normalized(page)
+              bad=['This page couldn’t load','Application error','Internal Server Error','Runtime Error']
+              for marker in bad:
+                  if marker.lower() in text.lower(): raise RuntimeError(f'{path}: runtime error marker {marker}')
+              if page.url.startswith(BASE+'/login') and path!='/login': raise RuntimeError(f'{path}: unexpectedly redirected to login')
+              if not text.strip(): raise RuntimeError(f'{path}: empty page body')
+
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True)
+              ctx=browser.new_context(viewport={'width':390,'height':844},device_scale_factor=2,is_mobile=True,has_touch=True)
+              page=ctx.new_page(); page.set_default_timeout(15000)
+              try:
+                  stage='public-pwa'
+                  page.goto(BASE+'/',wait_until='networkidle')
+                  response=page.request.get(BASE+'/manifest.webmanifest')
+                  if not response.ok: raise RuntimeError(f'manifest HTTP {response.status}')
+                  manifest=response.json()
+                  if manifest.get('display')!='standalone': raise RuntimeError('manifest display is not standalone')
+                  if manifest.get('start_url')!='/dashboard': raise RuntimeError('manifest start_url is not /dashboard')
+                  icons=manifest.get('icons') or []
+                  if not icons: raise RuntimeError('manifest has no icons')
+                  for icon in icons:
+                      src=icon.get('src')
+                      if src:
+                          r=page.request.get(BASE+src if src.startswith('/') else src)
+                          if not r.ok: raise RuntimeError(f'PWA icon unavailable: {src} HTTP {r.status}')
+
+                  # Chromium's own manifest/installability diagnostics; record errors rather than inventing install success.
+                  cdp=ctx.new_cdp_session(page)
+                  app_manifest=cdp.send('Page.getAppManifest')
+                  if app_manifest.get('errors'):
+                      raise RuntimeError('Chromium manifest parse errors: '+json.dumps(app_manifest.get('errors'),ensure_ascii=False))
+                  try:
+                      raw=cdp.send('Page.getInstallabilityErrors')
+                      install_errors=raw.get('installabilityErrors') or []
+                  except Exception:
+                      install_errors=[]
+
+                  stage='login'
+                  page.goto(BASE+'/login',wait_until='networkidle')
+                  page.get_by_label('Email',exact=True).fill(os.environ['UAT_SUPERADMIN_EMAIL'])
+                  page.get_by_label('Kata sandi',exact=True).fill(os.environ['UAT_SUPERADMIN_PASSWORD'])
+                  page.get_by_role('button',name='Masuk ke KDKMP').click()
+                  page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+                  assert_healthy(page,'/dashboard')
+
+                  stage='authenticated-routes'
+                  for route in routes:
+                      page.goto(BASE+route,wait_until='networkidle')
+                      assert_healthy(page,route)
+                  page.screenshot(path='/tmp/kdkmp-final-smoke/authenticated-mobile.png',full_page=True)
+
+                  stage='logout'
+                  page.goto(BASE+'/dashboard',wait_until='networkidle')
+                  button=page.get_by_role('button',name='Keluar',exact=True)
+                  expect(button).to_be_visible()
+                  button.click()
+                  page.wait_for_url(re.compile(r'.*/login(?:\?.*)?$'),timeout=20000)
+                  expect(page.get_by_label('Email',exact=True)).to_be_visible()
+                  page.goto(BASE+'/dashboard',wait_until='networkidle')
+                  if not page.url.startswith(BASE+'/login'):
+                      raise RuntimeError('Protected dashboard remained accessible after logout')
+
+                  out('failure_stage',''); out('failure_route',''); out('installability_errors',json.dumps(install_errors,ensure_ascii=False))
+                  print('Final authenticated release smoke PASS')
+              except Exception:
+                  out('failure_stage',stage); out('failure_route',route); out('installability_errors',json.dumps(install_errors,ensure_ascii=False))
+                  try: page.screenshot(path='/tmp/kdkmp-final-smoke/failure.png',full_page=True)
+                  except Exception: pass
+                  traceback.print_exc(); raise
+              finally:
+                  browser.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        env:
+          INSTALL_ERRORS: ${{ steps.smoke.outputs.installability_errors }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA release smoke PASS. Run \`$GITHUB_RUN_ID\`: production HTTPS manifest/start_url/standalone/icons loaded; Chromium manifest diagnostics had no parse errors; SUPER_ADMIN login passed; Dashboard, Members, Inventory, Procurement, Finance, Savings, Loans, Loan Reports, Approvals and Readiness loaded without runtime-error markers; logout returned to /login and protected /dashboard redirected back to login. Chromium installability diagnostics: \`${INSTALL_ERRORS:-[]}\`. Physical OS/browser install-button interaction is device UI and is not fabricated by this headless check."
+
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.smoke.outputs.failure_stage }}
+          ROUTE: ${{ steps.smoke.outputs.failure_route }}
+          INSTALL_ERRORS: ${{ steps.smoke.outputs.installability_errors }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA release smoke did not PASS. Run \`$GITHUB_RUN_ID\`; stage \`${STAGE:-setup}\`; route \`${ROUTE:-none}\`; Chromium installability diagnostics \`${INSTALL_ERRORS:-[]}\`. Inspect before PR #54 merge/deploy."
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-release-auth-pwa-${{ github.run_id }}
+          path: /tmp/kdkmp-final-smoke/*.png
+          if-no-files-found: ignore
+          retention-days: 14
