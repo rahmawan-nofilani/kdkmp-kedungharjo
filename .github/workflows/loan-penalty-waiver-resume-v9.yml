@@ -1,0 +1,177 @@
+name: Loan Penalty Waiver Resume V9
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  finish-penalty-waiver:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-PENALTY-WAIVER-V9' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 12
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      CONTRACT_NO: KON-20260819-6203E5DB
+      DISBURSEMENT_NO: CAIR-20260819-4FC7A3D4
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard credentials
+        run: |
+          test -n "$UAT_ADMINUNIT_PASSWORD"
+          test -n "$UAT_SUPERADMIN_PASSWORD"
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+      - name: Assess and approve one exact waiver
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-loan-penalty-v9
+          python <<'PY'
+          import os,re,traceback
+          from playwright.sync_api import sync_playwright,expect
+
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          CONTRACT=os.environ['CONTRACT_NO']; DISB=os.environ['DISBURSEMENT_NO']
+          stage='setup'; waiver_no=''; waiver_amount=0; assess_attempts=0
+
+          def out(k,v):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
+          def login(browser,email,password):
+              ctx=browser.new_context(); page=ctx.new_page(); page.set_default_timeout(15000)
+              page.goto(BASE+'/login',wait_until='networkidle')
+              page.get_by_label('Email',exact=True).fill(email)
+              page.get_by_label('Kata sandi',exact=True).fill(password)
+              page.get_by_role('button',name='Masuk ke KDKMP').click()
+              page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+              return ctx,page
+          def text(locator): return re.sub(r'\s+',' ',locator.inner_text().replace('\u00a0',' '))
+          def body(page): return text(page.locator('body'))
+          def rupiah(value):
+              m=re.search(r'Rp\s*([0-9.]+)',value.replace('\u00a0',' '),re.I)
+              return int(re.sub(r'\D','',m.group(1))) if m else 0
+          def clean(page): page.goto(BASE+'/loans/penalties',wait_until='networkidle')
+          def penalty_target(page):
+              rows=page.locator('tr').filter(has_text=CONTRACT)
+              for i in range(rows.count()):
+                  row=rows.nth(i)
+                  if row.locator('summary').filter(has_text='Ajukan waiver').count(): return row
+              return None
+          def waiver_row(page):
+              rows=page.locator('tr').filter(has_text=CONTRACT)
+              for i in range(rows.count()):
+                  row=rows.nth(i)
+                  if row.locator('td').count() and (row.locator('td').first.inner_text() or '').strip().startswith('WVR-'):
+                      return row
+              return None
+
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True); active=None
+              try:
+                  stage='assessment'
+                  ac,page=login(browser,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  clean(page)
+                  expect(page.get_by_role('heading',name='Keterlambatan dan Denda')).to_be_visible()
+
+                  target=penalty_target(page)
+                  while target is None and assess_attempts < 2:
+                      clean(page)
+                      crow=page.locator('tr').filter(has_text=CONTRACT).filter(has=page.get_by_role('button',name='Perbarui Denda')).first
+                      expect(crow).to_be_visible()
+                      crow.get_by_role('button',name='Perbarui Denda').click()
+                      assess_attempts += 1
+                      page.wait_for_timeout(4500)
+                      # A Server Action response can transiently show the Next recovery page; always re-open canonical page.
+                      clean(page)
+                      target=penalty_target(page)
+                  if target is None: raise RuntimeError('Assessment did not produce a positive waiver-eligible penalty after two same-day idempotent attempts')
+                  due=rupiah(target.locator('td').nth(6).inner_text())
+                  if due<=0: raise RuntimeError('Assessed penalty due is not positive')
+
+                  stage='waiver-create-submit'
+                  row=waiver_row(page)
+                  if row is None:
+                      waiver_amount=min(1000,due)
+                      target.locator('summary').filter(has_text='Ajukan waiver').click()
+                      target.locator('input[name="requested_amount"]').fill(str(waiver_amount))
+                      target.locator('input[name="reason"]').fill('Synthetic UAT maker-checker penalty waiver certification')
+                      target.get_by_role('button',name='Buat Draft Waiver').click()
+                      page.wait_for_timeout(3500)
+                      clean(page); row=waiver_row(page)
+                      if row is None: raise RuntimeError('Waiver DRAFT not persisted after official create action')
+                  waiver_no=(row.locator('td').first.inner_text() or '').strip().split()[0]
+                  if waiver_amount<=0: waiver_amount=rupiah(row.locator('td').nth(2).inner_text())
+                  if row.get_by_text('DRAFT',exact=True).count():
+                      button=row.get_by_role('button',name='Ajukan')
+                      expect(button).to_be_visible(); button.click(); page.wait_for_timeout(3000); clean(page); row=waiver_row(page)
+                  if row is None or not (row.get_by_text('SUBMITTED',exact=True).count() or row.get_by_text('APPROVED',exact=True).count()):
+                      raise RuntimeError('Waiver did not reach SUBMITTED after maker action')
+                  ac.close()
+
+                  stage='waiver-checker'
+                  sc,page=login(browser,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  clean(page); row=waiver_row(page)
+                  if row is None: raise RuntimeError('Exact waiver not visible to checker')
+                  if row.get_by_text('SUBMITTED',exact=True).count():
+                      note=row.locator('input[name="decision_note"]').first
+                      if note.count(): note.fill('Approved for synthetic UAT certification')
+                      row.get_by_role('button',name='Setujui').click(); page.wait_for_timeout(3500); clean(page); row=waiver_row(page)
+                  if row is None or not row.get_by_text('APPROVED',exact=True).count():
+                      raise RuntimeError('Waiver did not reach APPROVED after different checker action')
+                  page.screenshot(path='/tmp/kdkmp-loan-penalty-v9/pass.png',full_page=True)
+                  sc.close()
+
+                  out('failure_stage',''); out('waiver_number',waiver_no); out('waiver_amount',waiver_amount); out('assessment_attempts',assess_attempts)
+                  print('Loan penalty waiver V9 PASS')
+              except Exception:
+                  out('failure_stage',stage); out('waiver_number',waiver_no); out('waiver_amount',waiver_amount); out('assessment_attempts',assess_attempts); out('url',getattr(active,'url',''))
+                  if active:
+                      try: active.screenshot(path='/tmp/kdkmp-loan-penalty-v9/failure.png',full_page=True)
+                      except Exception: pass
+                  traceback.print_exc(); raise
+              finally: browser.close()
+          PY
+      - name: Record PASS
+        if: success()
+        env:
+          WAIVER: ${{ steps.uat.outputs.waiver_number }}
+          AMOUNT: ${{ steps.uat.outputs.waiver_amount }}
+          ATTEMPTS: ${{ steps.uat.outputs.assessment_attempts }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan non-zero penalty + waiver maker-checker UAT PASS. Run \`$GITHUB_RUN_ID\`. Existing synthetic \`KON-20260819-6203E5DB\` / \`CAIR-20260819-4FC7A3D4\` was reused; current-WIB overdue assessment produced a positive penalty (reload-safe same-day attempts: $ATTEMPTS); ADMIN_UNIT created/submitted exact waiver \`$WAIVER\` Rp$AMOUNT and different SUPER_ADMIN approved it. UAT-PENALTY is separate from F001; no direct schedule/status SQL manipulation."
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          WAIVER: ${{ steps.uat.outputs.waiver_number }}
+          AMOUNT: ${{ steps.uat.outputs.waiver_amount }}
+          ATTEMPTS: ${{ steps.uat.outputs.assessment_attempts }}
+          URL: ${{ steps.uat.outputs.url }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan penalty/waiver V9 did not PASS. Run \`$GITHUB_RUN_ID\`; stage \`${STAGE:-setup}\`; waiver \`${WAIVER:-none}\`; amount \`${AMOUNT:-0}\`; assessment attempts \`${ATTEMPTS:-0}\`; URL \`${URL:-none}\`. Inspect persisted state before any retry."
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-penalty-waiver-v9-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-penalty-v9/*.png
+          if-no-files-found: ignore
+          retention-days: 14
