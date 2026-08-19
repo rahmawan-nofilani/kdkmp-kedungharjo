@@ -37,7 +37,7 @@ jobs:
           python -m pip install --disable-pip-version-check 'playwright==1.55.0'
           python -m playwright install chromium
 
-      - name: Verify PWA surface, authenticated modules, and logout
+      - name: Verify PWA surface, authenticated modules, and mobile logout
         id: smoke
         shell: bash
         run: |
@@ -85,7 +85,6 @@ jobs:
                           r=page.request.get(BASE+src if src.startswith('/') else src)
                           if not r.ok: raise RuntimeError(f'PWA icon unavailable: {src} HTTP {r.status}')
 
-                  # Chromium's own manifest/installability diagnostics; record errors rather than inventing install success.
                   cdp=ctx.new_cdp_session(page)
                   app_manifest=cdp.send('Page.getAppManifest')
                   if app_manifest.get('errors'):
@@ -98,9 +97,12 @@ jobs:
 
                   stage='login'
                   page.goto(BASE+'/login',wait_until='networkidle')
-                  page.get_by_label('Email',exact=True).fill(os.environ['UAT_SUPERADMIN_EMAIL'])
-                  page.get_by_label('Kata sandi',exact=True).fill(os.environ['UAT_SUPERADMIN_PASSWORD'])
-                  page.get_by_role('button',name='Masuk ke KDKMP').click()
+                  email=page.locator('input[type="email"]').first
+                  password=page.locator('input[type="password"]').first
+                  expect(email).to_be_visible(); expect(password).to_be_visible()
+                  email.fill(os.environ['UAT_SUPERADMIN_EMAIL'])
+                  password.fill(os.environ['UAT_SUPERADMIN_PASSWORD'])
+                  page.get_by_role('button',name='Masuk ke KopdesKu',exact=True).click()
                   page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
                   assert_healthy(page,'/dashboard')
 
@@ -112,11 +114,13 @@ jobs:
 
                   stage='logout'
                   page.goto(BASE+'/dashboard',wait_until='networkidle')
+                  more=page.get_by_role('button',name='Lainnya',exact=True)
+                  expect(more).to_be_visible(); more.click()
+                  expect(page.get_by_text('Menu lainnya',exact=True)).to_be_visible()
                   button=page.get_by_role('button',name='Keluar',exact=True)
-                  expect(button).to_be_visible()
-                  button.click()
+                  expect(button).to_be_visible(); button.click()
                   page.wait_for_url(re.compile(r'.*/login(?:\?.*)?$'),timeout=20000)
-                  expect(page.get_by_label('Email',exact=True)).to_be_visible()
+                  expect(page.locator('input[type="email"]').first).to_be_visible()
                   page.goto(BASE+'/dashboard',wait_until='networkidle')
                   if not page.url.startswith(BASE+'/login'):
                       raise RuntimeError('Protected dashboard remained accessible after logout')
@@ -137,7 +141,7 @@ jobs:
         env:
           INSTALL_ERRORS: ${{ steps.smoke.outputs.installability_errors }}
         run: |
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA release smoke PASS. Run \`$GITHUB_RUN_ID\`: production HTTPS manifest/start_url/standalone/icons loaded; Chromium manifest diagnostics had no parse errors; SUPER_ADMIN login passed; Dashboard, Members, Inventory, Procurement, Finance, Savings, Loans, Loan Reports, Approvals and Readiness loaded without runtime-error markers; logout returned to /login and protected /dashboard redirected back to login. Chromium installability diagnostics: \`${INSTALL_ERRORS:-[]}\`. Physical OS/browser install-button interaction is device UI and is not fabricated by this headless check."
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA release smoke PASS. Run \`$GITHUB_RUN_ID\`: production HTTPS manifest/start_url/standalone/icons loaded; Chromium manifest diagnostics had no parse errors; SUPER_ADMIN login passed on the final KopdesKu login UI; Dashboard, Members, Inventory, Procurement, Finance, Savings, Loans, Loan Reports, Approvals and Readiness loaded without runtime-error markers; mobile Lainnya → Akun → Keluar returned to /login and protected /dashboard redirected back to login. Chromium installability diagnostics: \`${INSTALL_ERRORS:-[]}\`. Physical OS/browser install-button interaction is device UI and is not fabricated by this headless check."
 
       - name: Record failure
         if: failure()
@@ -146,7 +150,7 @@ jobs:
           ROUTE: ${{ steps.smoke.outputs.failure_route }}
           INSTALL_ERRORS: ${{ steps.smoke.outputs.installability_errors }}
         run: |
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA release smoke did not PASS. Run \`$GITHUB_RUN_ID\`; stage \`${STAGE:-setup}\`; route \`${ROUTE:-none}\`; Chromium installability diagnostics \`${INSTALL_ERRORS:-[]}\`. Inspect before PR #54 merge/deploy."
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA release smoke did not PASS. Run \`$GITHUB_RUN_ID\`; stage \`${STAGE:-setup}\`; route \`${ROUTE:-none}\`; Chromium installability diagnostics \`${INSTALL_ERRORS:-[]}\`. Inspect final release gate before operational sign-off."
 
       - name: Upload screenshots
         if: always()
