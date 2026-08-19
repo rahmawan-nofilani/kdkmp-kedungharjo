@@ -12,20 +12,32 @@ function badge(status:string){return `${styles.badge} ${status==="ACTIVE"?styles
 export function SavingsAccountsTable({accounts,members,userId,canApprove,intent}:{accounts:SavingsAccountRow[];members:MemberRow[];userId:string;canApprove:boolean;intent?:"deposit"|"withdraw"}){
   const memberMap=new Map(members.map(m=>[m.id,m]));
   const actionLabel=intent==="deposit"?"Pilih untuk Setoran →":intent==="withdraw"?"Pilih untuk Penarikan →":"Buka Saldo & Mutasi →";
-  return <div className={styles.tableWrap}><table><thead><tr><th>Rekening</th><th>Anggota</th><th>Produk / versi</th><th>Status</th><th>Dibuka</th><th>Kontrol</th></tr></thead><tbody>{accounts.map(row=>{
-    const member=memberMap.get(row.member_id);const snapshot=row.rule_snapshot||{};const own=row.opened_by===userId;
-    const productName=String(snapshot.display_name||snapshot.product_code||"Produk Simpanan");const version=String(snapshot.captured_version||snapshot.version||"—");
-    const detailHref=intent?`/savings/accounts/${row.id}?mode=${intent}`:`/savings/accounts/${row.id}`;
-    return <tr key={row.id}>
-      <td><strong>{row.account_number}</strong><small>ID {row.id.slice(0,8)}</small></td>
-      <td>{member?<><strong>{member.full_name}</strong><small>{member.member_number}</small></>:<><strong>Identitas dibatasi</strong><small>Hak MEMBER_VIEW diperlukan</small></>}</td>
-      <td><strong>{productName}</strong><small>Versi {version} · saldo minimum {money(snapshot.min_balance_amount)}</small></td>
-      <td><span className={badge(row.status)}>{row.status}</span>{row.status==="REJECTED"&&row.rejection_reason?<small>{row.rejection_reason}</small>:null}</td>
-      <td>{when(row.opened_at)}<small>{own?"dibuka oleh Anda":"dibuka user lain"}</small></td>
-      <td>{row.status==="PENDING"?canApprove&&!own?<div className={styles.actions}>
-        <form action={approveSavingsAccountAction}><input type="hidden" name="account_id" value={row.id}/><PendingSubmitButton pendingLabel="Mengaktifkan…">Periksa & Aktifkan</PendingSubmitButton></form>
-        <form action={rejectSavingsAccountAction} className={styles.reject}><input type="hidden" name="account_id" value={row.id}/><input name="rejection_reason" required minLength={5} maxLength={300} placeholder="Alasan penolakan"/><PendingSubmitButton pendingLabel="Menolak…">Tolak</PendingSubmitButton></form>
-      </div>:<span className={styles.wait}>Menunggu user lain</span>:row.status==="ACTIVE"?<Link className={styles.detailLink} href={detailHref}>{actionLabel}</Link>:"—"}</td>
-    </tr>;
-  })}</tbody></table></div>;
+  return <>
+    <div className={styles.tableWrap}><table><thead><tr><th>Rekening</th><th>Anggota</th><th>Produk / versi</th><th>Status</th><th>Dibuka</th><th>Kontrol</th></tr></thead><tbody>{accounts.map(row=>{
+      const member=memberMap.get(row.member_id);const snapshot=row.rule_snapshot||{};const own=row.opened_by===userId;
+      const productName=String(snapshot.display_name||snapshot.product_code||"Produk Simpanan");const version=String(snapshot.captured_version||snapshot.version||"—");
+      const detailHref=intent?`/savings/accounts/${row.id}?mode=${intent}`:`/savings/accounts/${row.id}`;
+      return <tr key={row.id}>
+        <td><strong>{row.account_number}</strong><small>ID {row.id.slice(0,8)}</small></td>
+        <td>{member?<><strong>{member.full_name}</strong><small>{member.member_number}</small></>:<><strong>Identitas dibatasi</strong><small>Hak MEMBER_VIEW diperlukan</small></>}</td>
+        <td><strong>{productName}</strong><small>Versi {version} · saldo minimum {money(snapshot.min_balance_amount)}</small></td>
+        <td><span className={badge(row.status)}>{row.status}</span>{row.status==="REJECTED"&&row.rejection_reason?<small>{row.rejection_reason}</small>:null}</td>
+        <td>{when(row.opened_at)}<small>{own?"dibuka oleh Anda":"dibuka user lain"}</small></td>
+        <td>{row.status==="PENDING"?canApprove&&!own?<div className={styles.actions}>
+          <form action={approveSavingsAccountAction}><input type="hidden" name="account_id" value={row.id}/><PendingSubmitButton pendingLabel="Mengaktifkan…">Periksa & Aktifkan</PendingSubmitButton></form>
+          <form action={rejectSavingsAccountAction} className={styles.reject}><input type="hidden" name="account_id" value={row.id}/><input name="rejection_reason" required minLength={5} maxLength={300} placeholder="Alasan penolakan"/><PendingSubmitButton pendingLabel="Menolak…">Tolak</PendingSubmitButton></form>
+        </div>:<span className={styles.wait}>Menunggu user lain</span>:row.status==="ACTIVE"?<Link className={styles.detailLink} href={detailHref}>{actionLabel}</Link>:"—"}</td>
+      </tr>;
+    })}</tbody></table></div>
+
+    <div className={styles.mobileCards}>{accounts.map(row=>{
+      const member=memberMap.get(row.member_id);const snapshot=row.rule_snapshot||{};const own=row.opened_by===userId;const productName=String(snapshot.display_name||snapshot.product_code||"Produk Simpanan");
+      const detailHref=intent?`/savings/accounts/${row.id}?mode=${intent}`:`/savings/accounts/${row.id}`;
+      return <article key={row.id} className={styles.accountCard}>
+        <div className={styles.accountCardHead}><div><strong>{member?.full_name||"Identitas dibatasi"}</strong><small>{member?.member_number||row.account_number}</small></div><span className={badge(row.status)}>{row.status}</span></div>
+        <div className={styles.accountCardMeta}><span><small>Rekening</small><b>{row.account_number}</b></span><span><small>Produk</small><b>{productName}</b></span></div>
+        {row.status==="ACTIVE"?<Link className={styles.mobilePrimary} href={detailHref}>{actionLabel}</Link>:row.status==="PENDING"&&canApprove&&!own?<div className={styles.mobileApproval}><form action={approveSavingsAccountAction}><input type="hidden" name="account_id" value={row.id}/><PendingSubmitButton pendingLabel="Mengaktifkan…">Aktifkan</PendingSubmitButton></form><form action={rejectSavingsAccountAction}><input type="hidden" name="account_id" value={row.id}/><input name="rejection_reason" required minLength={5} maxLength={300} placeholder="Alasan penolakan"/><PendingSubmitButton pendingLabel="Menolak…">Tolak</PendingSubmitButton></form></div>:<span className={styles.wait}>{row.status==="PENDING"?"Menunggu pemeriksa":"Tidak aktif"}</span>}
+      </article>;
+    })}</div>
+  </>;
 }
