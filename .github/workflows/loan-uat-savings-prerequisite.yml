@@ -1,0 +1,159 @@
+name: Loan UAT Savings Prerequisite
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  topup-loan-demo-savings:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-SAVINGS-PREP' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 10
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+      SAVINGS_ACCOUNT_ID: 9e181ae7-0a2c-4988-a08d-39253e069c76
+      SAVINGS_ACCOUNT_NUMBER: SAV-47DB122857AE
+
+    steps:
+      - name: Guard credential
+        shell: bash
+        run: test -n "$UAT_SUPERADMIN_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Deposit official Savings prerequisite
+        id: prep
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-loan-prep
+          python <<'PY'
+          import os
+          import re
+          import traceback
+          from playwright.sync_api import sync_playwright, expect
+
+          base=os.environ['UAT_BASE_URL'].rstrip('/')
+          email=os.environ['UAT_SUPERADMIN_EMAIL']
+          password=os.environ['UAT_SUPERADMIN_PASSWORD']
+          account_id=os.environ['SAVINGS_ACCOUNT_ID']
+          run_id=os.environ['GITHUB_RUN_ID']
+          reference=f'LOAN-UAT-PREP-{run_id}'
+          stage='login'
+
+          def output(name,value):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+                  f.write(f'{name}={value}\n')
+
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True)
+              page=browser.new_page()
+              page.set_default_timeout(15000)
+              try:
+                  page.goto(f'{base}/login',wait_until='networkidle')
+                  page.get_by_label('Email',exact=True).fill(email)
+                  page.get_by_label('Kata sandi',exact=True).fill(password)
+                  page.get_by_role('button',name='Masuk ke KDKMP').click()
+                  page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+
+                  stage='savings-nav'
+                  page.get_by_role('link',name='Rekening Simpanan',exact=True).click()
+                  page.wait_for_url(re.compile(r'.*/savings/accounts(?:\?.*)?$'),timeout=20000)
+                  page.goto(f'{base}/savings/accounts/{account_id}',wait_until='networkidle')
+                  page.wait_for_url(re.compile(r'.*/savings/accounts/[^/?]+(?:\?.*)?$'),timeout=20000)
+                  expect(page.get_by_role('heading',name=os.environ['SAVINGS_ACCOUNT_NUMBER'])).to_be_visible(timeout=15000)
+
+                  stage='pre-balance'
+                  balance_text=page.locator('text=Saldo Saat Ini').locator('xpath=..').inner_text()
+                  output('pre_balance_text',balance_text.replace('\n',' '))
+                  if re.search(r'Rp\s*100[.,]000',balance_text):
+                      output('deposit_reference','already-eligible')
+                      page.screenshot(path='/tmp/kdkmp-loan-prep/loan-savings-prep-pass.png',full_page=True)
+                      print('Savings already meets Loan minimum; no deposit created.')
+                  else:
+                      stage='deposit'
+                      form=page.locator('form').filter(has=page.get_by_role('button',name='Catat Setoran')).first
+                      expect(form).to_be_visible(timeout=15000)
+                      form.locator('input[name="amount"]').fill('50000')
+                      form.locator('select[name="payment_method"]').select_option('BANK_TRANSFER')
+                      treasury=form.locator('select[name="treasury_account_id"]')
+                      options=treasury.locator('option').all()
+                      bank_value=None
+                      for opt in options:
+                          text=(opt.inner_text() or '').strip()
+                          val=opt.get_attribute('value') or ''
+                          if val and text.startswith('Bank'):
+                              bank_value=val
+                              break
+                      if not bank_value:
+                          raise RuntimeError('No active Bank treasury option found for Savings deposit.')
+                      treasury.select_option(bank_value)
+                      form.locator('input[name="reference_number"]').fill(reference)
+                      form.locator('input[name="note"]').fill('Synthetic Loan UAT savings eligibility top-up')
+                      form.get_by_role('button',name='Catat Setoran').click()
+                      page.wait_for_url(re.compile(r'.*/savings/accounts/[^?]+\?status=deposited$'),timeout=20000)
+                      expect(page.get_by_text('Setoran berhasil dicatat.')).to_be_visible(timeout=15000)
+                      stage='post-balance'
+                      balance_text=page.locator('text=Saldo Saat Ini').locator('xpath=..').inner_text()
+                      if not re.search(r'Rp\s*100[.,]000',balance_text):
+                          raise RuntimeError(f'Expected Rp100.000 post-deposit balance, got: {balance_text}')
+                      output('deposit_reference',reference)
+                      output('post_balance_text',balance_text.replace('\n',' '))
+                      page.screenshot(path='/tmp/kdkmp-loan-prep/loan-savings-prep-pass.png',full_page=True)
+                      print('Loan Savings prerequisite deposit PASS.')
+                  output('failure_stage','')
+              except Exception:
+                  output('failure_stage',stage)
+                  try: page.screenshot(path='/tmp/kdkmp-loan-prep/loan-savings-prep-failure.png',full_page=True)
+                  except Exception: pass
+                  traceback.print_exc()
+                  raise
+              finally:
+                  browser.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        shell: bash
+        env:
+          REF: ${{ steps.prep.outputs.deposit_reference }}
+          PRE: ${{ steps.prep.outputs.pre_balance_text }}
+          POST: ${{ steps.prep.outputs.post_balance_text }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan UAT Savings prerequisite PASS. Run \`$GITHUB_RUN_ID\`. Account \`SAV-47DB122857AE\` (DEV-0002) now meets F001 minimum savings Rp100.000 via official Savings UI/BANK_TRANSFER flow. Reference: \`${REF:-already-eligible}\`. This is synthetic UAT setup, not SQL bypass."
+
+      - name: Record failure
+        if: failure()
+        shell: bash
+        env:
+          STAGE: ${{ steps.prep.outputs.failure_stage }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan UAT Savings prerequisite did not PASS. Run \`$GITHUB_RUN_ID\`. Stage: \`${STAGE:-setup}\`. Do not start Loan application until this prerequisite is resolved."
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-uat-savings-prep-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-prep/*.png
+          if-no-files-found: ignore
+          retention-days: 14
