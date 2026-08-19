@@ -3,26 +3,27 @@ import { redirect } from "next/navigation";
 import { getAccessContext } from "@/lib/access/context";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageContainer, PageHeader } from "@/components/ui/page-layout";
+import { LoanApplicationIcon,PosIcon,PurchaseIcon,RepaymentIcon,SavingsDepositIcon,SavingsWithdrawIcon } from "@/components/ui/icons";
 import styles from "./dashboard.module.css";
 
 export const dynamic = "force-dynamic";
 
 const capabilityMap = [
-  { permission: "POS_ACCESS", title: "Kasir & Penjualan", description: "POS, shift, receipt, dan transaksi tunai.", href:"/pos" },
+  { permission: "POS_ACCESS", title: "Kasir & Penjualan", description: "POS, shift, struk, dan transaksi penjualan.", href:"/pos" },
   { permission: "SAVINGS_ACCOUNT_VIEW", title: "Simpan Pinjam", description: "Rekening, simpanan, pinjaman, angsuran, dan laporan.", href:"/simpan-pinjam" },
-  { permission: "INVENTORY_VIEW", title: "Stok & Gudang", description: "Stok, movement, gudang, dan stock opname.", href:"/inventory" },
-  { permission: "PURCHASE_VIEW", title: "Pembelian", description: "Supplier, purchase request, PO, receiving, dan AP.", href:"/procurement" },
-  { permission: "FINANCE_VIEW", title: "Keuangan", description: "Kas & bank, jurnal, aset, rekonsiliasi, dan closing.", href:"/finance" },
-  { permission: "APPROVAL_VIEW", title: "Persetujuan", description: "Antrean maker-checker lintas modul.", href:"/approvals" },
+  { permission: "INVENTORY_VIEW", title: "Stok & Gudang", description: "Stok, pergerakan barang, gudang, dan penyesuaian.", href:"/inventory" },
+  { permission: "PURCHASE_VIEW", title: "Pembelian", description: "Supplier, permintaan, PO, penerimaan, dan hutang pemasok.", href:"/procurement" },
+  { permission: "FINANCE_VIEW", title: "Keuangan", description: "Kas & bank, jurnal, aset, rekonsiliasi, dan tutup buku.", href:"/finance" },
+  { permission: "APPROVAL_VIEW", title: "Persetujuan", description: "Pekerjaan yang menunggu pemeriksaan atau persetujuan.", href:"/approvals" },
 ] as const;
 
 const quickActions=[
-  {permission:"POS_ACCESS",label:"POS / Penjualan",description:"Buka transaksi kasir",href:"/pos",tone:"blue"},
-  {permission:"SAVINGS_DEPOSIT",label:"Setoran Simpanan",description:"Catat simpanan masuk",href:"/savings/accounts?intent=deposit",tone:"green"},
-  {permission:"SAVINGS_WITHDRAW",label:"Penarikan Simpanan",description:"Catat simpanan keluar",href:"/savings/accounts?intent=withdraw",tone:"red"},
-  {permission:"LOAN_REPAYMENT_VIEW",label:"Bayar Angsuran",description:"Catat pembayaran pinjaman",href:"/loans/repayments",tone:"purple"},
-  {permission:"LOAN_APPLICATION_VIEW",label:"Ajukan Pinjaman",description:"Buat pengajuan baru",href:"/loans/applications",tone:"blue"},
-  {permission:"PURCHASE_VIEW",label:"Pembelian",description:"Buka alur procurement",href:"/procurement",tone:"amber"},
+  {permission:"POS_ACCESS",label:"Penjualan",description:"Buka kasir dan catat penjualan",href:"/pos",tone:"blue",icon:PosIcon},
+  {permission:"SAVINGS_DEPOSIT",label:"Simpanan Masuk",description:"Catat setoran simpanan anggota",href:"/savings/accounts?intent=deposit",tone:"green",icon:SavingsDepositIcon},
+  {permission:"SAVINGS_WITHDRAW",label:"Penarikan Simpanan",description:"Catat pengambilan simpanan anggota",href:"/savings/accounts?intent=withdraw",tone:"red",icon:SavingsWithdrawIcon},
+  {permission:"LOAN_REPAYMENT_VIEW",label:"Angsuran Masuk",description:"Terima pembayaran angsuran pinjaman",href:"/loans/repayments",tone:"green",icon:RepaymentIcon},
+  {permission:"LOAN_APPLICATION_VIEW",label:"Pengajuan Pinjaman",description:"Buat pengajuan pinjaman baru",href:"/loans/applications",tone:"blue",icon:LoanApplicationIcon},
+  {permission:"PURCHASE_VIEW",label:"Pembelian",description:"Buka alur pembelian barang",href:"/procurement",tone:"amber",icon:PurchaseIcon},
 ] as const;
 
 export default async function DashboardPage() {
@@ -55,13 +56,13 @@ export default async function DashboardPage() {
       <PageHeader eyebrow={access.organization.name} title={`Selamat datang, ${firstName}`} description="Pilih pekerjaan yang ingin dilakukan. Menu dan aksi ditampilkan sesuai hak akses akun Anda."/>
 
       {actions.length?<section className={styles.quickSection}>
-        <div className={styles.sectionHead}><span>AKSI CEPAT</span><h2>Pekerjaan harian</h2></div>
-        <div className={styles.quickGrid}>{actions.map(action=><Link className={`${styles.quickAction} ${styles[action.tone]}`} href={action.href} key={action.label}><span className={styles.quickIcon}>→</span><strong>{action.label}</strong><small>{action.description}</small></Link>)}</div>
+        <div className={styles.sectionHead}><span>Transaksi</span><h2>Pekerjaan harian</h2></div>
+        <div className={styles.quickGrid}>{actions.map(action=>{const Icon=action.icon;return <Link className={`${styles.quickAction} ${styles[action.tone]}`} href={action.href} key={action.label}><span className={styles.quickIcon}><Icon size={21}/></span><span className={styles.quickCopy}><strong>{action.label}</strong><small>{action.description}</small></span></Link>})}</div>
       </section>:null}
 
       <section className={styles.moduleSection}>
-        <div className={styles.sectionHead}><span>RUANG KERJA</span><h2>Modul yang tersedia</h2></div>
-        <div className={styles.moduleGrid}>{capabilities.map(item=><Link href={item.href} className={styles.moduleCard} key={item.title}><strong>{item.title}</strong><span>{item.description}</span><b>Buka →</b></Link>)}</div>
+        <div className={styles.sectionHead}><span>Area kerja</span><h2>Modul yang tersedia</h2></div>
+        <div className={styles.moduleGrid}>{capabilities.map(item=><Link href={item.href} className={styles.moduleCard} key={item.title}><strong>{item.title}</strong><span>{item.description}</span><b>Buka</b></Link>)}</div>
       </section>
 
       <div className={styles.desktopContext}>{accountContext}</div>
