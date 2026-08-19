@@ -50,7 +50,7 @@ export default async function PurchaseOrderDetailPage({ params, searchParams }: 
 
       <section className={styles.panel}><div className={styles.panelHeader}><div><span className={styles.kicker}>RECEIVING HISTORY</span><h3>Goods Receipt</h3></div><span className={styles.pill}>{detail.receipts.length}</span></div>{detail.receipts.length ? <div className={styles.tableWrap}><table><thead><tr><th>Receipt</th><th>Gudang</th><th>Qty</th><th>Waktu</th><th>Status</th></tr></thead><tbody>{detail.receipts.map((receipt) => <tr key={receipt.id}><td><strong>{receipt.receipt_number}</strong><span>{receipt.line_count} line</span></td><td><strong>{receipt.warehouse_code}</strong><span>{receipt.warehouse_name}</span></td><td><strong>{receipt.total_qty}</strong></td><td><strong>{timestamp(receipt.received_at)}</strong></td><td><span className={styles.statusBadge}>{receipt.status}</span></td></tr>)}</tbody></table></div> : <div className={styles.empty}>Belum ada penerimaan untuk PO ini.</div>}</section>
 
-      {detail.po.status === "RECEIVED" ? <section className={styles.nextPhase}><span className={styles.kicker}>NEXT CONTROL</span><h3>Barang sudah diterima penuh.</h3><p>Tahap berikutnya adalah Supplier Invoice → 3-Way Match (PO vs Receiving vs Invoice) → Accounts Payable → Payment. Fitur pembayaran belum dibuka pada Phase 2A ini.</p></section> : null}
+      {detail.po.status === "RECEIVED" ? <section className={styles.nextPhase}><span className={styles.kicker}>NEXT CONTROL</span><h3>Barang sudah diterima penuh.</h3><p>Tahap berikutnya adalah Supplier Invoice → 3-Way Match (PO vs Receiving vs Invoice) → Accounts Payable → Payment. <Link href="/procurement/ap">Buka Hutang Pemasok →</Link></p></section> : null}
     </div>
   </main>;
 }
