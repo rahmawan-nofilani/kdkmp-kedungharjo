@@ -1,0 +1,174 @@
+name: KopdesKu v1.3.2 Responsive Preview
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  NEXT_PUBLIC_SUPABASE_URL: https://xhjdqmrehpnvvjktwltl.supabase.co
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_dzltH7ywA-wS6WxtiGwM6Q_3wsBzeCr
+  PREVIEW_WORKER_NAME: kdkmp-kedungharjo-v132-preview
+
+jobs:
+  responsive-preview:
+    if: github.event.pull_request.head.ref == 'feat/kopdesku-mobile-refinement-v1.3.2'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.15
+
+      - name: Guard preview credentials
+        shell: bash
+        run: |
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_D1_DATABASE_ID UAT_SUPERADMIN_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required preview secret: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Resolve Cloudflare account, D1 and preview URL
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const token=process.env.CLOUDFLARE_API_TOKEN;
+          const databaseId=process.env.CLOUDFLARE_D1_DATABASE_ID;
+          const explicit=process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+          const headers={Authorization:`Bearer ${token}`};
+          async function cf(path){const r=await fetch(`https://api.cloudflare.com/client/v4${path}`,{headers});const b=await r.json();return{r,b}}
+          async function d1(accountId){const {r,b}=await cf(`/accounts/${accountId}/d1/database/${databaseId}`);return r.ok&&b?.success&&b?.result?.name?b.result:null}
+          async function resolve(){
+            if(explicit){const db=await d1(explicit);if(!db)throw new Error('Configured account does not own D1.');return{accountId:explicit,db}}
+            const {r,b}=await cf('/accounts?per_page=50');if(!r.ok||!b?.success)throw new Error('Could not list Cloudflare accounts.');
+            const found=[];for(const account of b.result){const db=await d1(account.id);if(db)found.push({accountId:account.id,db})}
+            if(found.length!==1)throw new Error(`Expected one D1 owner, found ${found.length}.`);return found[0]
+          }
+          (async()=>{const {accountId,db}=await resolve();const {r,b}=await cf(`/accounts/${accountId}/workers/subdomain`);if(!r.ok||!b?.success||!b.result?.subdomain)throw new Error('Workers subdomain unavailable.');const url=`https://${process.env.PREVIEW_WORKER_NAME}.${b.result.subdomain}.workers.dev`;fs.appendFileSync(process.env.GITHUB_ENV,`CLOUDFLARE_ACCOUNT_ID=${accountId}\nCLOUDFLARE_D1_DATABASE_NAME=${db.name}\nPREVIEW_URL=${url}\n`);console.log(`Preview URL: ${url}`)})().catch(e=>{console.error(e.message||e);process.exit(1)})
+          NODE
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Generate preview Wrangler config
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const config=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          config.name=process.env.PREVIEW_WORKER_NAME;
+          config.d1_databases=[{binding:'DB',database_name:process.env.CLOUDFLARE_D1_DATABASE_NAME,database_id:process.env.CLOUDFLARE_D1_DATABASE_ID}];
+          fs.writeFileSync('wrangler.preview.json',JSON.stringify(config,null,2));
+          NODE
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build preview
+        run: |
+          bun run build
+          bunx opennextjs-cloudflare build --config=wrangler.preview.json --skipNextBuild
+
+      - name: Deploy isolated preview Worker
+        run: bunx wrangler deploy --config=wrangler.preview.json
+
+      - name: Wait for preview health
+        shell: bash
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -L -sS -o /tmp/preview.html -w '%{http_code}' "$PREVIEW_URL/login" || true)
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 2
+          done
+          echo "Preview did not become healthy." >&2
+          exit 1
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check playwright
+          python -m playwright install chromium
+
+      - name: Responsive authenticated read-only smoke
+        shell: bash
+        env:
+          UAT_EMAIL: uat.superadmin@example.com
+        run: |
+          mkdir -p qa-screenshots
+          cat > /tmp/responsive_smoke.py <<'PY'
+          import os, re
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright
+
+          base=os.environ['PREVIEW_URL'].rstrip('/')
+          email=os.environ['UAT_EMAIL']
+          password=os.environ['UAT_SUPERADMIN_PASSWORD']
+          routes=[
+            ('dashboard','/dashboard'),
+            ('pos','/pos'),
+            ('simpan-pinjam','/simpan-pinjam'),
+            ('savings','/savings/accounts'),
+            ('loan-applications','/loans/applications'),
+            ('loan-contracts','/loans/contracts'),
+            ('inventory','/inventory'),
+            ('procurement','/procurement'),
+            ('finance','/finance'),
+            ('approvals','/approvals'),
+            ('daily-sales','/reports/daily-sales'),
+          ]
+          Path('qa-screenshots').mkdir(exist_ok=True)
+          with sync_playwright() as p:
+            browser=p.chromium.launch(headless=True)
+            page=browser.new_page(viewport={'width':390,'height':844}, device_scale_factor=1)
+            page.goto(base+'/login',wait_until='networkidle',timeout=60000)
+            page.locator('input[type="email"]').fill(email)
+            page.locator('input[type="password"]').fill(password)
+            page.get_by_role('button',name=re.compile('Masuk',re.I)).click()
+            page.wait_for_url(re.compile(r'/dashboard'),timeout=30000)
+            failures=[]
+            for name,path in routes:
+              page.goto(base+path,wait_until='networkidle',timeout=60000)
+              if '/login' in page.url:
+                failures.append(f'{name}: redirected to login')
+                continue
+              dims=page.evaluate('''() => ({w: innerWidth, sw: document.documentElement.scrollWidth, body: document.body.scrollWidth})''')
+              if max(dims['sw'],dims['body']) > dims['w'] + 3:
+                failures.append(f"{name}: document horizontal overflow {max(dims['sw'],dims['body'])}>{dims['w']}")
+              page.screenshot(path=f'qa-screenshots/{name}-390x844.png',full_page=True)
+            page.goto(base+'/dashboard',wait_until='networkidle',timeout=60000)
+            page.get_by_role('button',name=re.compile('Menu',re.I)).last.click()
+            page.get_by_role('button',name=re.compile('Keluar',re.I)).click()
+            page.wait_for_url(re.compile(r'/login'),timeout=30000)
+            if failures:
+              print('\n'.join(failures))
+              raise SystemExit(1)
+            print('Responsive authenticated smoke PASS')
+            browser.close()
+          PY
+          python /tmp/responsive_smoke.py
+
+      - name: Upload responsive QA screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kopdesku-v132-responsive-qa-${{ github.event.pull_request.head.sha }}
+          path: qa-screenshots
+          if-no-files-found: warn
+          retention-days: 7
