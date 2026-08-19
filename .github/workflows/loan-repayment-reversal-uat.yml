@@ -50,21 +50,32 @@ jobs:
           mkdir -p /tmp/kdkmp-loan-reversal
           python <<'PY'
           import os,re,traceback
-          from playwright.sync_api import sync_playwright,expect
+          from playwright.sync_api import sync_playwright,expect,TimeoutError as PlaywrightTimeoutError
 
           BASE=os.environ['UAT_BASE_URL'].rstrip('/')
           REPAYMENT=os.environ['REPAYMENT_NUMBER']
-          CONTRACT=os.environ['CONTRACT_NUMBER']
           RUN_ID=os.environ['GITHUB_RUN_ID']
           reason=f'UAT koreksi pembayaran {RUN_ID} karena pengujian reversal terkontrol'
-          stage='login-maker'; reversal_no=''
+          stage='login-maker'; reversal_no=''; diagnostics=[]
 
           def out(k,v):
               with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
                   f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
 
-          def login(browser,email,password):
-              ctx=browser.new_context(); page=ctx.new_page(); page.set_default_timeout(15000)
+          def attach_diagnostics(page,label):
+              def on_response(response):
+                  if response.request.method=='POST' and response.url.startswith(BASE):
+                      diagnostics.append(f'{label} POST {response.status} {response.url}')
+              def on_request_failed(request):
+                  if request.url.startswith(BASE):
+                      diagnostics.append(f'{label} REQUEST_FAILED {request.method} {request.url} {request.failure}')
+              def on_page_error(error): diagnostics.append(f'{label} PAGE_ERROR {error}')
+              page.on('response',on_response)
+              page.on('requestfailed',on_request_failed)
+              page.on('pageerror',on_page_error)
+
+          def login(browser,email,password,label):
+              ctx=browser.new_context(); page=ctx.new_page(); page.set_default_timeout(15000); attach_diagnostics(page,label)
               page.goto(BASE+'/login',wait_until='networkidle')
               page.get_by_label('Email',exact=True).fill(email)
               page.get_by_label('Kata sandi',exact=True).fill(password)
@@ -80,10 +91,23 @@ jobs:
                       select.select_option(value=value); return
               raise RuntimeError(f'Posted repayment {REPAYMENT} not eligible for reversal')
 
+          def wait_created(page):
+              try:
+                  page.wait_for_url(re.compile(r'.*/loans/corrections\?status=created.*'),timeout=20000)
+                  return
+              except PlaywrightTimeoutError:
+                  diagnostics.append(f'maker-create FINAL_URL {page.url}')
+                  try:
+                      title=page.locator('body').inner_text(timeout=3000).replace('\n',' ')[:500]
+                      diagnostics.append(f'maker-create BODY {title}')
+                  except Exception as e:
+                      diagnostics.append(f'maker-create BODY_UNAVAILABLE {e}')
+                  raise
+
           with sync_playwright() as p:
               browser=p.chromium.launch(headless=True); active=None
               try:
-                  maker,page=login(browser,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  maker,page=login(browser,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD'],'maker'); active=page
                   stage='maker-create'
                   page.goto(BASE+'/loans/corrections',wait_until='networkidle')
                   expect(page.get_by_role('heading',name='Koreksi & Pelunasan')).to_be_visible()
@@ -92,7 +116,7 @@ jobs:
                   choose_repayment(form.locator('select[name="repayment_id"]'))
                   form.locator('textarea[name="reason"]').fill(reason)
                   form.get_by_role('button',name='Buat Draft Reversal').click()
-                  page.wait_for_url(re.compile(r'.*/loans/corrections\?status=created.*'),timeout=20000)
+                  wait_created(page)
                   row=page.locator('table tbody tr').filter(has_text=reason).first
                   expect(row).to_be_visible()
                   reversal_no=row.locator('td').nth(0).locator('strong').inner_text().strip()
@@ -105,12 +129,11 @@ jobs:
                   expect(row).to_contain_text('SUBMITTED')
                   maker.close()
 
-                  checker,page=login(browser,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  checker,page=login(browser,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD'],'checker'); active=page
                   stage='checker-approve'
                   page.goto(BASE+'/loans/corrections',wait_until='networkidle')
                   row=page.locator('table tbody tr').filter(has_text=reversal_no).first
-                  expect(row).to_be_visible()
-                  expect(row).to_contain_text(REPAYMENT)
+                  expect(row).to_be_visible(); expect(row).to_contain_text(REPAYMENT)
                   row.get_by_role('button',name='Approve').click()
                   page.wait_for_url(re.compile(r'.*/loans/corrections\?status=approved$'),timeout=20000)
                   row=page.locator('table tbody tr').filter(has_text=reversal_no).first
@@ -124,13 +147,15 @@ jobs:
                   expect(row.get_by_role('link',name='Jurnal reversal')).to_be_visible()
                   page.screenshot(path='/tmp/kdkmp-loan-reversal/pass.png',full_page=True)
                   checker.close()
-                  out('failure_stage','');out('reversal_number',reversal_no);out('reason',reason)
+                  out('failure_stage','');out('reversal_number',reversal_no);out('diagnostics',' | '.join(diagnostics)[-1800:])
                   print('Loan repayment reversal UAT PASS')
+                  for item in diagnostics: print('DIAG',item)
               except Exception:
-                  out('failure_stage',stage);out('reversal_number',reversal_no);out('reason',reason)
+                  out('failure_stage',stage);out('reversal_number',reversal_no);out('diagnostics',' | '.join(diagnostics)[-1800:])
                   if active is not None:
                       try: active.screenshot(path='/tmp/kdkmp-loan-reversal/failure.png',full_page=True)
                       except Exception: pass
+                  for item in diagnostics: print('DIAG',item)
                   traceback.print_exc();raise
               finally: browser.close()
           PY
@@ -147,8 +172,9 @@ jobs:
         env:
           STAGE: ${{ steps.uat.outputs.failure_stage }}
           REVERSAL: ${{ steps.uat.outputs.reversal_number }}
+          DIAGNOSTICS: ${{ steps.uat.outputs.diagnostics }}
         run: |
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan repayment reversal UAT did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; reversal \`${REVERSAL:-not-created}\`. Inspect current reversal state before any retry; do not create a second reversal for the same repayment."
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan repayment reversal UAT did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; reversal \`${REVERSAL:-not-created}\`. Diagnostics: \`${DIAGNOSTICS:-none}\`. Inspect current reversal state before any retry; do not create a second reversal for the same repayment."
 
       - name: Upload screenshot
         if: always()
