@@ -1,0 +1,120 @@
+name: Finance Opening Journal Cleanup UAT
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  cancel-opening-journal:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-FINANCE-OPENING-CANCEL' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 8
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_MANAGER_EMAIL: nofilanirahmawan@gmail.com
+      UAT_MANAGER_PASSWORD: ${{ secrets.UAT_MANAGER_PASSWORD }}
+      JOURNAL_ID: c8d8f885-4ca7-4b49-93c6-8ea7f99d5c83
+      JOURNAL_NUMBER: OB-MSRH1LUA-D4210
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard credential
+        run: test -n "$UAT_MANAGER_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Cancel exact empty opening journal through maker UI
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-finance-opening
+          python <<'PY'
+          import os,re,traceback
+          from playwright.sync_api import sync_playwright,expect
+
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          JID=os.environ['JOURNAL_ID']; JNO=os.environ['JOURNAL_NUMBER']
+          stage='login'; result='unknown'
+          def out(k,v):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:f.write(f'{k}={v}\n')
+          def body(page): return re.sub(r'\s+',' ',page.locator('body').inner_text().replace('\u00a0',' '))
+
+          with sync_playwright() as p:
+              b=p.chromium.launch(headless=True); page=b.new_page(); page.set_default_timeout(15000)
+              try:
+                  page.goto(BASE+'/login',wait_until='networkidle')
+                  page.get_by_label('Email',exact=True).fill(os.environ['UAT_MANAGER_EMAIL'])
+                  page.get_by_label('Kata sandi',exact=True).fill(os.environ['UAT_MANAGER_PASSWORD'])
+                  page.get_by_role('button',name='Masuk ke KDKMP').click()
+                  page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+
+                  stage='open-journal'
+                  page.goto(BASE+f'/finance/journals/{JID}',wait_until='networkidle')
+                  expect(page.get_by_role('heading',name=JNO)).to_be_visible()
+                  text=body(page)
+                  cancel=page.get_by_role('button',name='Cancel DRAFT')
+                  if cancel.count():
+                      if 'DRAFT' not in text: raise RuntimeError('Cancel button visible but DRAFT status not visible')
+                      if not re.search(r'Lines\s*0\b',text,re.I): raise RuntimeError('Target opening journal is not zero-line; refuse cancel')
+                      stage='cancel-journal'
+                      cancel.click()
+                      page.wait_for_url(re.compile(r'.*/finance/journals\?status=cancelled$'),timeout=20000)
+                      result='cancelled'
+                  else:
+                      if 'DRAFT' in text: raise RuntimeError('Opening journal remains DRAFT but maker cancel control is unavailable')
+                      result='already-resolved'
+
+                  stage='verify'
+                  page.goto(BASE+f'/finance/journals/{JID}',wait_until='networkidle')
+                  text=body(page)
+                  if re.search(r'\bDRAFT\b',text): raise RuntimeError('Opening journal is still DRAFT after cleanup')
+                  page.screenshot(path='/tmp/kdkmp-finance-opening/pass.png',full_page=True)
+                  out('result',result); out('failure_stage','')
+                  print('Finance opening journal cleanup PASS')
+              except Exception:
+                  out('result',result); out('failure_stage',stage)
+                  try: page.screenshot(path='/tmp/kdkmp-finance-opening/failure.png',full_page=True)
+                  except Exception: pass
+                  traceback.print_exc(); raise
+              finally:b.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        env:
+          RESULT: ${{ steps.uat.outputs.result }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Finance opening-journal blocker PASS. Run \`$GITHUB_RUN_ID\`. \`OB-MSRH1LUA-D4210\` was verified as the exact zero-line legacy Opening Balance and is now \`${RESULT}\` through the original MANAGER maker UI. No journal posting, bank reconciliation, or accounting-period CLOSE/LOCK was performed."
+
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          RESULT: ${{ steps.uat.outputs.result }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Finance opening-journal cleanup did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; result \`${RESULT:-unknown}\`. Inspect before retry."
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: finance-opening-journal-${{ github.run_id }}
+          path: /tmp/kdkmp-finance-opening/*.png
+          if-no-files-found: ignore
+          retention-days: 14
