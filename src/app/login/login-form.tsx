@@ -3,6 +3,9 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { Button } from "@/components/ui/button";
+import { TextField } from "@/components/ui/fields";
+import styles from "../public.module.css";
 
 export function LoginForm() {
   const router = useRouter();
@@ -33,41 +36,35 @@ export function LoginForm() {
   }
 
   return (
-    <form className="login-form" onSubmit={handleSubmit}>
-      <label>
-        <span>Email</span>
-        <input
-          type="email"
-          autoComplete="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="nama@contoh.id"
-          required
-        />
-      </label>
+    <form className={styles.loginForm} onSubmit={handleSubmit}>
+      <TextField
+        label="Email"
+        type="email"
+        autoComplete="email"
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        placeholder="nama@contoh.id"
+        required
+      />
 
-      <label>
-        <span>Kata sandi</span>
-        <input
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="••••••••"
-          minLength={8}
-          required
-        />
-      </label>
+      <TextField
+        label="Kata sandi"
+        type="password"
+        autoComplete="current-password"
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+        placeholder="••••••••"
+        minLength={8}
+        required
+      />
 
-      {error ? <div className="form-error" role="alert">{error}</div> : null}
+      {error ? <p className={styles.loginError} role="alert">{error}</p> : null}
 
-      <button className="primary-button" type="submit" disabled={loading}>
-        {loading ? "Memverifikasi…" : "Masuk ke KDKMP"}
-      </button>
+      <Button className={styles.loginButton} type="submit" disabled={loading}>
+        {loading ? "Memverifikasi…" : "Masuk ke KopdesKu"}
+      </Button>
 
-      <p className="form-note">
-        Akses hanya untuk akun yang dibuat administrator organisasi. Pendaftaran publik tidak dibuka.
-      </p>
+      <p className={styles.formNote}>Akses hanya untuk akun organisasi yang dibuat administrator. Pendaftaran publik tidak tersedia.</p>
     </form>
   );
 }
