@@ -1,0 +1,386 @@
+name: Loan Penalty Waiver UAT
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  loan-penalty-waiver:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-PENALTY-WAIVER' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 20
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_MANAGER_EMAIL: nofilanirahmawan@gmail.com
+      UAT_MANAGER_PASSWORD: ${{ secrets.UAT_MANAGER_PASSWORD }}
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      PRODUCT_CODE: UAT-PENALTY
+      PRODUCT_NAME: UAT Penalty & Waiver
+      PRINCIPAL: '100000'
+      AGREEMENT_DATE: '2026-07-01'
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard credentials
+        shell: bash
+        run: |
+          test -n "$UAT_MANAGER_PASSWORD"
+          test -n "$UAT_ADMINUNIT_PASSWORD"
+          test -n "$UAT_SUPERADMIN_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Execute official-flow penalty and waiver UAT
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-loan-penalty
+          python <<'PY'
+          import os,re,traceback
+          from playwright.sync_api import sync_playwright,expect
+
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          PRODUCT=os.environ['PRODUCT_CODE']
+          PNAME=os.environ['PRODUCT_NAME']
+          PRINCIPAL=int(os.environ['PRINCIPAL'])
+          AGREEMENT=os.environ['AGREEMENT_DATE']
+          RUN_ID=os.environ['GITHUB_RUN_ID']
+          stage='setup'; product_url=''; app_no=''; app_url=''; contract_no=''; contract_url=''; disb_no=''; waiver_no=''; waiver_amount=0
+
+          def out(k,v):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+                  f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
+
+          def login(browser,email,password):
+              ctx=browser.new_context(); page=ctx.new_page(); page.set_default_timeout(15000)
+              page.goto(BASE+'/login',wait_until='networkidle')
+              page.get_by_label('Email',exact=True).fill(email)
+              page.get_by_label('Kata sandi',exact=True).fill(password)
+              page.get_by_role('button',name='Masuk ke KDKMP').click()
+              page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+              return ctx,page
+
+          def body(page):
+              return re.sub(r'\s+',' ',page.locator('body').inner_text().replace('\u00a0',' '))
+
+          def select_containing(select,needle):
+              opts=select.locator('option')
+              for i in range(opts.count()):
+                  o=opts.nth(i); txt=(o.inner_text() or '').strip(); value=o.get_attribute('value') or ''
+                  if value and needle in txt:
+                      select.select_option(value=value); return txt
+              raise RuntimeError(f'Option containing {needle!r} not found')
+
+          def rupiah(text):
+              m=re.search(r'Rp\s*([0-9.]+)',text.replace('\u00a0',' '),re.I)
+              return int(re.sub(r'\D','',m.group(1))) if m else 0
+
+          def choose_cash_treasury(select):
+              opts=select.locator('option')
+              for i in range(opts.count()):
+                  o=opts.nth(i); txt=(o.inner_text() or '').strip(); value=o.get_attribute('value') or ''
+                  if value and txt.startswith('CASH ·') and rupiah(txt) >= PRINCIPAL:
+                      select.select_option(value=value); return txt
+              raise RuntimeError('No ACTIVE CASH treasury with displayed balance >= Rp100.000')
+
+          def set_check(locator,wanted):
+              if wanted and not locator.is_checked(): locator.check()
+              if not wanted and locator.is_checked(): locator.uncheck()
+
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True); active=None
+              try:
+                  # A. Separate penalty-enabled product: MANAGER maker.
+                  stage='product-maker-login'
+                  mc,page=login(browser,os.environ['UAT_MANAGER_EMAIL'],os.environ['UAT_MANAGER_PASSWORD']); active=page
+                  page.goto(BASE+'/loans/products',wait_until='networkidle')
+                  expect(page.get_by_role('heading',name='Produk Pinjaman')).to_be_visible()
+                  if page.locator('tr').filter(has_text=PRODUCT).count():
+                      row=page.locator('tr').filter(has_text=PRODUCT).first
+                      href=row.locator('a').filter(has_text='Buka Produk').get_attribute('href')
+                      if not href: raise RuntimeError('Existing UAT-PENALTY row has no product link')
+                      product_url=BASE+href
+                      page.goto(product_url,wait_until='networkidle')
+                  else:
+                      stage='product-create'
+                      page.get_by_text('+ Buat Produk',exact=True).click()
+                      form=page.locator('form').filter(has=page.get_by_role('button',name='Buat Draft Produk')).first
+                      form.locator('input[name="code"]').fill(PRODUCT)
+                      form.locator('input[name="display_name"]').fill(PNAME)
+                      form.locator('textarea[name="description"]').fill('Synthetic overdue penalty and maker-checker waiver certification only')
+                      form.get_by_role('button',name='Buat Draft Produk').click()
+                      page.wait_for_url(re.compile(r'.*/loans/products/[^?]+\?status=created$'),timeout=20000)
+                      product_url=page.url.split('?')[0]
+
+                  stage='product-configure'
+                  # Only configure/submit when an editable DRAFT is present. This makes a retry safe after submit/approval.
+                  save=page.get_by_role('button',name='Simpan Draft')
+                  if save.count():
+                      f=page.locator('form').filter(has=save).first
+                      f.locator('input[name="display_name"]').fill(PNAME)
+                      f.locator('textarea[name="description"]').fill('Synthetic overdue penalty and maker-checker waiver certification only')
+                      f.locator('input[name="min_principal_amount"]').fill(str(PRINCIPAL))
+                      f.locator('input[name="max_principal_amount"]').fill(str(PRINCIPAL))
+                      f.locator('input[name="min_tenor_months"]').fill('1')
+                      f.locator('input[name="max_tenor_months"]').fill('1')
+                      f.locator('select[name="installment_frequency"]').select_option('WEEKLY')
+                      f.locator('select[name="interest_method"]').select_option('FLAT')
+                      f.locator('input[name="interest_rate_percent"]').fill('0')
+                      f.locator('input[name="admin_fee_amount"]').fill('0')
+                      f.locator('input[name="provision_fee_percent"]').fill('0')
+                      f.locator('input[name="grace_period_days"]').fill('0')
+                      f.locator('input[name="late_penalty_percent_per_day"]').fill('0.10')
+                      f.locator('input[name="late_penalty_min_amount"]').fill('1000')
+                      f.locator('input[name="min_membership_months"]').fill('0')
+                      f.locator('input[name="min_savings_balance_amount"]').fill('0')
+                      f.locator('input[name="max_active_loans"]').fill('2')
+                      f.locator('input[name="max_dsr_percent"]').fill('90')
+                      set_check(f.locator('input[name="collateral_required"]'),False)
+                      set_check(f.locator('input[name="guarantor_required"]'),False)
+                      set_check(f.locator('input[name="disbursement_cash"]'),True)
+                      set_check(f.locator('input[name="disbursement_bank"]'),False)
+                      set_check(f.locator('input[name="repayment_cash"]'),True)
+                      set_check(f.locator('input[name="repayment_bank"]'),False)
+                      set_check(f.locator('input[name="repayment_qris"]'),False)
+                      f.locator('input[name="disbursement_accounting_event_code"]').fill('LOAN_DISBURSEMENT')
+                      f.locator('input[name="principal_accounting_event_code"]').fill('LOAN_PRINCIPAL_REPAYMENT')
+                      f.locator('input[name="interest_accounting_event_code"]').fill('LOAN_INTEREST_REPAYMENT')
+                      f.locator('input[name="penalty_accounting_event_code"]').fill('LOAN_LATE_PENALTY')
+                      f.locator('input[name="effective_from"]').fill('2026-06-01')
+                      f.locator('textarea[name="regulatory_basis"]').fill('Synthetic UAT policy only')
+                      f.locator('textarea[name="terms_text"]').fill('Synthetic weekly one-month product for non-zero overdue penalty and waiver certification.')
+                      f.locator('textarea[name="change_note"]').fill('Initial UAT penalty-enabled version')
+                      save.click()
+                      page.wait_for_url(re.compile(r'.*/loans/products/[^?]+\?status=saved$'),timeout=20000)
+                      page.get_by_role('button',name='Ajukan untuk Diperiksa').click()
+                      page.wait_for_url(re.compile(r'.*/loans/products/[^?]+\?status=submitted$'),timeout=20000)
+                  mc.close()
+
+                  # B. SUPER_ADMIN different checker approves product.
+                  stage='product-checker'
+                  sc,page=login(browser,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  page.goto(product_url,wait_until='networkidle')
+                  if page.get_by_role('button',name='Periksa & Aktifkan').count():
+                      page.get_by_role('button',name='Periksa & Aktifkan').click()
+                      page.wait_for_url(re.compile(r'.*/loans/products/[^?]+\?status=approved$'),timeout=20000)
+                  if 'ACTIVE' not in body(page): raise RuntimeError('Penalty product is not ACTIVE')
+                  sc.close()
+
+                  # C. Minimal official application: ADMIN_UNIT maker, SUPER_ADMIN checker.
+                  stage='application-maker'
+                  ac,page=login(browser,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  page.goto(BASE+'/loans/applications',wait_until='networkidle')
+                  existing=page.locator('tr').filter(has_text=PRODUCT).filter(has_text='Anggota Demo Dua')
+                  if existing.count():
+                      href=existing.first.locator('a').filter(has_text='Buka').get_attribute('href')
+                      if not href: raise RuntimeError('Existing penalty application has no link')
+                      app_url=BASE+href; page.goto(app_url,wait_until='networkidle'); app_no=page.locator('h1').inner_text().strip()
+                  else:
+                      page.get_by_text('+ Buat Pengajuan',exact=True).click()
+                      form=page.locator('form').filter(has=page.get_by_role('button',name='Simpan Draft Pengajuan')).first
+                      form.locator('select[name="member_id"]').select_option(label='DEV-0002 · Anggota Demo Dua')
+                      select_containing(form.locator('select[name="product_version_id"]'),PRODUCT)
+                      form.locator('input[name="requested_principal_amount"]').fill(str(PRINCIPAL))
+                      form.locator('input[name="requested_tenor_months"]').fill('1')
+                      form.locator('textarea[name="purpose"]').fill(f'Synthetic overdue penalty waiver UAT {RUN_ID}')
+                      form.locator('input[name="declared_monthly_income_amount"]').fill('5000000')
+                      form.locator('input[name="declared_monthly_obligation_amount"]').fill('0')
+                      form.get_by_role('button',name='Simpan Draft Pengajuan').click()
+                      page.wait_for_url(re.compile(r'.*/loans/applications/[^?]+\?status=created$'),timeout=20000)
+                      app_url=page.url.split('?')[0]; app_no=page.locator('h1').inner_text().strip()
+                  txt=body(page)
+                  if 'DRAFT' in txt:
+                      stage='application-eligibility'
+                      if page.get_by_role('button',name='Periksa Kelayakan').count():
+                          page.get_by_role('button',name='Periksa Kelayakan').click()
+                          page.wait_for_url(re.compile(r'.*\?status=checked$'),timeout=20000)
+                      expect(page.get_by_text('LULUS',exact=True).first).to_be_visible()
+                      if page.get_by_role('button',name='Kirim ke Pemeriksa').count():
+                          page.get_by_role('button',name='Kirim ke Pemeriksa').click()
+                          page.wait_for_url(re.compile(r'.*\?status=submitted$'),timeout=20000)
+                  ac.close()
+
+                  stage='application-checker'
+                  sc,page=login(browser,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  page.goto(app_url,wait_until='networkidle')
+                  if page.get_by_role('button',name='Mulai Pemeriksaan').count():
+                      page.get_by_role('button',name='Mulai Pemeriksaan').click()
+                      page.wait_for_url(re.compile(r'.*\?status=reviewing$'),timeout=20000)
+                  if page.get_by_role('button',name='Setujui Pengajuan').count():
+                      page.get_by_role('button',name='Setujui Pengajuan').click()
+                      page.wait_for_url(re.compile(r'.*\?status=approved$'),timeout=20000)
+                  expect(page.get_by_text('DISETUJUI',exact=True)).to_be_visible()
+                  sc.close()
+
+                  # D. Historical agreement through normal contract RPC; WEEKLY 1-month => 5 schedule rows.
+                  stage='contract'
+                  ac,page=login(browser,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  page.goto(BASE+'/loans/contracts',wait_until='networkidle')
+                  # Reuse an existing contract if a prior partial run already created it for this member/product fixture.
+                  contract_rows=page.locator('tr').filter(has_text=PNAME).filter(has_text='Anggota Demo Dua')
+                  if contract_rows.count():
+                      href=contract_rows.first.locator('a').filter(has_text='Buka').get_attribute('href')
+                      if href:
+                          contract_url=BASE+href; page.goto(contract_url,wait_until='networkidle'); contract_no=page.locator('h1').inner_text().strip()
+                  if not contract_no:
+                      page.goto(BASE+'/loans/contracts',wait_until='networkidle')
+                      page.get_by_text('+ Bentuk Kontrak',exact=True).click()
+                      cf=page.locator('form').filter(has=page.get_by_role('button',name='Bentuk Kontrak & Jadwal')).first
+                      select_containing(cf.locator('select[name="application_id"]'),app_no)
+                      cf.locator('input[name="agreement_date"]').fill(AGREEMENT)
+                      cf.get_by_role('button',name='Bentuk Kontrak & Jadwal').click()
+                      page.wait_for_url(re.compile(r'.*/loans/contracts/[^?]+\?status=created$'),timeout=20000)
+                      contract_url=page.url.split('?')[0]; contract_no=page.locator('h1').inner_text().strip()
+                  if not contract_no: raise RuntimeError('Penalty contract number empty')
+                  rows=page.locator('table tbody tr').count()
+                  if rows != 5: raise RuntimeError(f'Expected 5 WEEKLY schedule rows, got {rows}')
+                  if '2026-07-08' not in body(page): raise RuntimeError('Expected historical first due date 2026-07-08 not visible')
+                  ac.close()
+
+                  # E. Official disbursement if contract remains READY.
+                  stage='disbursement-maker'
+                  ac,page=login(browser,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  page.goto(BASE+'/loans/disbursements',wait_until='networkidle')
+                  existing=page.locator('tr').filter(has_text='Anggota Demo Dua').filter(has_text=PNAME)
+                  disb_url=''
+                  if existing.count():
+                      href=existing.first.locator('a').filter(has_text='Buka').get_attribute('href')
+                      if href: disb_url=BASE+href; page.goto(disb_url,wait_until='networkidle'); disb_no=page.locator('h1').inner_text().strip()
+                  if not disb_no:
+                      page.goto(BASE+'/loans/disbursements',wait_until='networkidle')
+                      page.get_by_text('+ Buat Permintaan Pencairan',exact=True).click()
+                      df=page.locator('form').filter(has=page.get_by_role('button',name='Buat Draft Pencairan')).first
+                      select_containing(df.locator('select[name="contract_id"]'),contract_no)
+                      df.locator('select[name="channel"]').select_option('CASH')
+                      choose_cash_treasury(df.locator('select[name="treasury_account_id"]'))
+                      df.locator('input[name="recipient_name"]').fill('Anggota Demo Dua')
+                      df.locator('input[name="request_note"]').fill(f'Penalty waiver fixture {RUN_ID}')
+                      df.get_by_role('button',name='Buat Draft Pencairan').click()
+                      page.wait_for_url(re.compile(r'.*/loans/disbursements/[^?]+\?status=created$'),timeout=20000)
+                      disb_url=page.url.split('?')[0]; disb_no=page.locator('h1').inner_text().strip()
+                  if page.get_by_role('button',name='Ajukan Pencairan').count():
+                      page.get_by_role('button',name='Ajukan Pencairan').click(); page.wait_for_url(re.compile(r'.*\?status=submitted$'),timeout=20000)
+                  ac.close()
+
+                  stage='disbursement-checker'
+                  sc,page=login(browser,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  page.goto(disb_url,wait_until='networkidle')
+                  if page.get_by_role('button',name='Setujui Pencairan').count():
+                      page.get_by_role('button',name='Setujui Pencairan').click(); page.wait_for_url(re.compile(r'.*\?status=approved$'),timeout=20000)
+                  if page.get_by_role('button',name='Eksekusi Pencairan').count():
+                      page.locator('input[name="execution_reference"]').fill(f'UAT-PENALTY-{RUN_ID}')
+                      page.get_by_role('button',name='Eksekusi Pencairan').click(); page.wait_for_url(re.compile(r'.*\?status=disbursed$'),timeout=30000)
+                  expect(page.get_by_text('DISBURSED',exact=True).first).to_be_visible(timeout=20000)
+                  sc.close()
+
+                  # F. Current-WIB-date assessment + ADMIN_UNIT waiver maker.
+                  stage='penalty-assess'
+                  ac,page=login(browser,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  page.goto(BASE+'/loans/penalties',wait_until='networkidle')
+                  crow=page.locator('tr').filter(has_text=contract_no).filter(has=page.get_by_role('button',name='Perbarui Denda'))
+                  if crow.count():
+                      crow.first.get_by_role('button',name='Perbarui Denda').click()
+                      page.wait_for_url(re.compile(r'.*/loans/penalties\?status=assessed$'),timeout=25000)
+                      page.wait_for_load_state('networkidle')
+                  stage='waiver-create'
+                  rows=page.locator('tr').filter(has_text=contract_no)
+                  target=None
+                  for i in range(rows.count()):
+                      r=rows.nth(i)
+                      if r.locator('summary').filter(has_text='Ajukan waiver').count():
+                          target=r; break
+                  if target is None: raise RuntimeError('No assessed penalty row with waiver action; overdue assessment did not create due penalty')
+                  due=rupiah(target.locator('td').nth(6).inner_text())
+                  if due <= 0: raise RuntimeError('Penalty due is not positive')
+                  waiver_amount=min(1000,due)
+                  target.locator('summary').filter(has_text='Ajukan waiver').click()
+                  target.locator('input[name="requested_amount"]').fill(str(waiver_amount))
+                  target.locator('input[name="reason"]').fill('Synthetic UAT maker-checker penalty waiver certification')
+                  target.get_by_role('button',name='Buat Draft Waiver').click()
+                  page.wait_for_url(re.compile(r'.*/loans/penalties\?status=waiver-created.*'),timeout=20000)
+                  page.wait_for_load_state('networkidle')
+                  wrows=page.locator('tr').filter(has_text=contract_no).filter(has_text='DRAFT')
+                  if not wrows.count(): raise RuntimeError('Created waiver DRAFT row not found')
+                  wrow=wrows.first; waiver_no=(wrow.locator('td').first.inner_text() or '').strip().split()[0]
+                  wrow.get_by_role('button',name='Ajukan').click()
+                  page.wait_for_url(re.compile(r'.*/loans/penalties\?status=submitted.*'),timeout=20000)
+                  ac.close()
+
+                  # G. Different SUPER_ADMIN checker approves waiver.
+                  stage='waiver-checker'
+                  sc,page=login(browser,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  page.goto(BASE+'/loans/penalties',wait_until='networkidle')
+                  wrow=page.locator('tr').filter(has_text=waiver_no).first
+                  expect(wrow).to_be_visible()
+                  expect(wrow.get_by_text('SUBMITTED',exact=True)).to_be_visible()
+                  wrow.locator('input[name="decision_note"]').first.fill('Approved for synthetic UAT certification')
+                  wrow.get_by_role('button',name='Setujui').click()
+                  page.wait_for_url(re.compile(r'.*/loans/penalties\?status=approved$'),timeout=20000)
+                  page.wait_for_load_state('networkidle')
+                  wrow=page.locator('tr').filter(has_text=waiver_no).first
+                  expect(wrow.get_by_text('APPROVED',exact=True)).to_be_visible()
+                  if waiver_amount <= 0: raise RuntimeError('Waiver amount missing')
+                  page.screenshot(path='/tmp/kdkmp-loan-penalty/pass.png',full_page=True)
+                  sc.close()
+
+                  out('failure_stage',''); out('product_url',product_url); out('application_number',app_no); out('contract_number',contract_no); out('disbursement_number',disb_no); out('waiver_number',waiver_no); out('waiver_amount',waiver_amount)
+                  print('Loan penalty and waiver UAT PASS')
+              except Exception:
+                  out('failure_stage',stage); out('product_url',product_url); out('application_number',app_no); out('contract_number',contract_no); out('disbursement_number',disb_no); out('waiver_number',waiver_no); out('waiver_amount',waiver_amount)
+                  if active is not None:
+                      try: active.screenshot(path='/tmp/kdkmp-loan-penalty/failure.png',full_page=True)
+                      except Exception: pass
+                  traceback.print_exc(); raise
+              finally:
+                  browser.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        env:
+          APP: ${{ steps.uat.outputs.application_number }}
+          CONTRACT: ${{ steps.uat.outputs.contract_number }}
+          DISB: ${{ steps.uat.outputs.disbursement_number }}
+          WAIVER: ${{ steps.uat.outputs.waiver_number }}
+          AMOUNT: ${{ steps.uat.outputs.waiver_amount }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan non-zero penalty + waiver maker-checker UAT PASS. Run \`$GITHUB_RUN_ID\`. Separate synthetic product \`UAT-PENALTY\` was created by MANAGER and activated by different SUPER_ADMIN; F001 was not modified. Official application \`$APP\` → historical synthetic WEEKLY contract \`$CONTRACT\` (agreement 2026-07-01) → CASH disbursement \`$DISB\` used normal application/contract/disbursement flows. Current-WIB penalty assessment produced positive overdue penalty. ADMIN_UNIT created/submitted waiver \`$WAIVER\` for Rp$AMOUNT; different SUPER_ADMIN approved it. No schedule/status SQL manipulation was used."
+
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          APP: ${{ steps.uat.outputs.application_number }}
+          CONTRACT: ${{ steps.uat.outputs.contract_number }}
+          DISB: ${{ steps.uat.outputs.disbursement_number }}
+          WAIVER: ${{ steps.uat.outputs.waiver_number }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan penalty/waiver UAT did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; application \`${APP:-none}\`; contract \`${CONTRACT:-none}\`; disbursement \`${DISB:-none}\`; waiver \`${WAIVER:-none}\`. Inspect current state before retry; reuse existing UAT-PENALTY fixture and do not modify F001 or direct-edit schedule/status rows."
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-penalty-waiver-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-penalty/*.png
+          if-no-files-found: ignore
+          retention-days: 14
