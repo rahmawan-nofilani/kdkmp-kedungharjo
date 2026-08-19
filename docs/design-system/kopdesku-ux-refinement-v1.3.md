@@ -1,6 +1,6 @@
 # KopdesKu UX Refinement & Navigation Pack v1.3
 
-Status: **IMPLEMENTATION COMPLETE · RELEASE QA PENDING**
+Status: **IMPLEMENTATION COMPLETE · FINAL CI PASS · PRODUCTION SMOKE PENDING**
 
 Foundation: `KopdesKu Integration Pack v1.2`.
 
@@ -182,20 +182,30 @@ Presentation density has been normalized across:
 - Loan products, applications, contracts and repayments;
 - Daily Sales report.
 
-Global v1.3 adapter rules also normalize remaining authenticated workspaces without changing their server actions.
+Global v1.3 adapter/shared UI rules also normalize remaining authenticated workspaces without changing their server actions.
+
+## Final candidate evidence
+
+PR `#63` final implementation candidate is based directly on the current `main` with `behind_by=0` at release preparation. Its final pre-release CI run `32245550956` passed:
+
+- Typecheck: PASS.
+- Next.js production build: PASS.
+- Cloudflare OpenNext build: PASS.
+- Wrangler production-shape dry run: PASS.
+
+Changed-file audit contains presentation components, styles, documentation, and the release smoke workflow; no `actions.ts`, D1/accounting library, migration, or schema file is part of the v1.3 diff.
 
 ## Release QA gate
 
-Before merge/deploy:
+A separate preview Worker/D1 environment is not declared in this repository. Do not point an ad-hoc preview at production D1 merely for visual QA.
 
-- Typecheck PASS on the final head.
-- Next.js production build PASS on the final head.
-- OpenNext Cloudflare build PASS on the final head.
-- Wrangler production-shape dry run PASS on the final head.
-- No unexpected RBAC visibility regressions.
-- Existing transaction actions remain unchanged.
-- Logo and canonical brand colors remain unchanged from v1.2.
-- Final authenticated mobile smoke runs at 390x844 and verifies no page-level horizontal overflow on certified routes.
-- Smoke verifies mobile bottom navigation, role-aware Transaksi launcher, domain-first Menu, Simpan Pinjam hierarchy, POS Produk↔Keranjang, authenticated route loading, and logout/session protection.
+The guarded release sequence is therefore:
 
-There is no separate preview Worker/D1 environment declared in the repository. Do not point an ad-hoc preview at production D1 merely for visual QA. Production deployment remains gated until the PR final head is CI-green and release QA is ready.
+1. final CI-green PR merge;
+2. official production deployment workflow;
+3. authenticated mobile smoke at 390x844;
+4. smoke verifies no page-level horizontal overflow on certified routes;
+5. smoke verifies mobile bottom navigation, role-aware Transaksi launcher, domain-first Menu, Simpan Pinjam hierarchy, POS Produk↔Keranjang, authenticated route loading, PWA manifest/installability diagnostics, and logout/session protection;
+6. presentation-only regression, if any, is handled as immediate fix-forward without altering business logic.
+
+The full August 1–31 accounting month-end gate remains separate from this presentation release and must not be fabricated or bypassed.
