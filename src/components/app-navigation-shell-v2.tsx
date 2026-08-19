@@ -3,89 +3,106 @@
 import type { ReactNode } from "react";
 import { useEffect,useMemo,useState } from "react";
 import Link from "next/link";
-import { usePathname,useRouter } from "next/navigation";
+import { usePathname,useRouter,useSearchParams } from "next/navigation";
 import { LogoutButton } from "@/components/logout-button";
 import { KopdesKuBrand } from "@/components/brand/kopdesku-brand";
 import { Drawer } from "@/components/ui/overlays";
-import { ChevronLeftIcon,ChevronRightIcon,FinanceIcon,HomeIcon,InventoryIcon,MoreIcon,PosIcon,ReportIcon,SettingsIcon,TransactionIcon,UsersIcon,type IconProps } from "@/components/ui/icons";
+import {
+  ApprovalIcon,AssetIcon,BankIcon,ChevronLeftIcon,ChevronRightIcon,DisbursementIcon,FinanceIcon,HomeIcon,
+  InventoryIcon,JournalIcon,LoanApplicationIcon,MoreIcon,PosIcon,PurchaseIcon,QuickActionIcon,ReceivingIcon,
+  RepaymentIcon,ReportIcon,SavingsDepositIcon,SavingsWithdrawIcon,SettingsIcon,SettlementIcon,ShiftIcon,
+  UsersIcon,type IconProps,
+} from "@/components/ui/icons";
 
 type ShellAccess={profile:{fullName:string};role:{name:string};permissions:string[]};
 type IconComponent=(props:IconProps)=>ReactNode;
-type NavItem={label:string;href:string;permission?:string;anyPermissions?:string[];badge?:string;icon?:IconComponent};
+type NavItem={label:string;href:string;description?:string;permission?:string;anyPermissions?:string[];badge?:string;icon?:IconComponent;exact?:boolean};
 type NavGroup={label?:string;items:NavItem[]};
 type NavModule={label:string;icon:IconComponent;direct?:NavItem;groups?:NavGroup[]};
+type SearchParamsLike={get:(name:string)=>string|null;toString:()=>string};
 
 const simpanPinjamPermissions=["SAVINGS_PRODUCT_VIEW","SAVINGS_ACCOUNT_VIEW","SAVINGS_TX_VIEW","SAVINGS_TRANSACTION_VIEW","LOAN_PRODUCT_VIEW","LOAN_APPLICATION_VIEW","LOAN_CONTRACT_VIEW","LOAN_DISBURSEMENT_VIEW","LOAN_REPAYMENT_VIEW","LOAN_PENALTY_VIEW","LOAN_REPORT_VIEW"];
 
 const modules:NavModule[]=[
   {label:"Beranda",icon:HomeIcon,direct:{label:"Beranda",href:"/dashboard",permission:"DASHBOARD_VIEW",icon:HomeIcon}},
   {label:"Kasir & Penjualan",icon:PosIcon,groups:[
-    {label:"Transaksi",items:[{label:"POS / Penjualan",href:"/pos",permission:"POS_ACCESS",icon:PosIcon},{label:"Kasir / Shift",href:"/teller",permission:"POS_ACCESS",icon:TransactionIcon}]},
-    {label:"Laporan",items:[{label:"Laporan Penjualan",href:"/reports/daily-sales",permission:"REPORT_VIEW",icon:ReportIcon}]},
+    {label:"Transaksi",items:[
+      {label:"POS / Penjualan",href:"/pos",permission:"POS_ACCESS",icon:PosIcon},
+      {label:"Kasir / Shift",href:"/teller",permission:"POS_ACCESS",icon:ShiftIcon},
+    ]},
   ]},
   {label:"Simpan Pinjam",icon:FinanceIcon,groups:[
     {label:"Ringkasan",items:[{label:"Beranda Simpan Pinjam",href:"/simpan-pinjam",anyPermissions:simpanPinjamPermissions,icon:HomeIcon}]},
     {label:"Simpanan",items:[
-      {label:"Rekening Anggota",href:"/savings/accounts",permission:"SAVINGS_ACCOUNT_VIEW",icon:UsersIcon},
-      {label:"Setoran Masuk",href:"/savings/accounts?intent=deposit",permission:"SAVINGS_DEPOSIT",icon:TransactionIcon},
-      {label:"Penarikan",href:"/savings/accounts?intent=withdraw",permission:"SAVINGS_WITHDRAW",icon:TransactionIcon},
-      {label:"Riwayat Simpanan",href:"/savings/reports",anyPermissions:["SAVINGS_TX_VIEW","SAVINGS_TRANSACTION_VIEW","REPORT_VIEW"],icon:ReportIcon},
+      {label:"Rekening Anggota",href:"/savings/accounts",permission:"SAVINGS_ACCOUNT_VIEW",icon:UsersIcon,exact:true},
+      {label:"Simpanan Masuk",href:"/savings/accounts?intent=deposit",permission:"SAVINGS_DEPOSIT",icon:SavingsDepositIcon},
+      {label:"Penarikan Simpanan",href:"/savings/accounts?intent=withdraw",permission:"SAVINGS_WITHDRAW",icon:SavingsWithdrawIcon},
     ]},
     {label:"Pinjaman",items:[
-      {label:"Pengajuan Pinjaman",href:"/loans/applications",permission:"LOAN_APPLICATION_VIEW",icon:TransactionIcon},
-      {label:"Kontrak & Jadwal",href:"/loans/contracts",permission:"LOAN_CONTRACT_VIEW"},
-      {label:"Pencairan",href:"/loans/disbursements",permission:"LOAN_DISBURSEMENT_VIEW"},
-      {label:"Angsuran Masuk",href:"/loans/repayments",permission:"LOAN_REPAYMENT_VIEW",icon:TransactionIcon},
-      {label:"Denda & Keringanan",href:"/loans/penalties",permission:"LOAN_PENALTY_VIEW"},
-      {label:"Pelunasan & Koreksi",href:"/loans/corrections",anyPermissions:["LOAN_CORRECTION_VIEW","LOAN_REPAYMENT_POST"]},
+      {label:"Pengajuan Pinjaman",href:"/loans/applications",permission:"LOAN_APPLICATION_VIEW",icon:LoanApplicationIcon},
+      {label:"Kontrak & Jadwal",href:"/loans/contracts",permission:"LOAN_CONTRACT_VIEW",icon:JournalIcon},
+      {label:"Pencairan Pinjaman",href:"/loans/disbursements",permission:"LOAN_DISBURSEMENT_VIEW",icon:DisbursementIcon},
+      {label:"Angsuran Masuk",href:"/loans/repayments",permission:"LOAN_REPAYMENT_VIEW",icon:RepaymentIcon},
+      {label:"Denda & Keringanan",href:"/loans/penalties",permission:"LOAN_PENALTY_VIEW",icon:FinanceIcon},
+      {label:"Pelunasan & Koreksi",href:"/loans/corrections",anyPermissions:["LOAN_CORRECTION_VIEW","LOAN_REPAYMENT_POST"],icon:SettlementIcon},
     ]},
-    {label:"Pengaturan",items:[{label:"Produk Simpanan",href:"/savings/products",permission:"SAVINGS_PRODUCT_VIEW",badge:"Config"},{label:"Produk Pinjaman",href:"/loans/products",permission:"LOAN_PRODUCT_VIEW",badge:"Config"}]},
+    {label:"Pengaturan",items:[
+      {label:"Produk Simpanan",href:"/savings/products",permission:"SAVINGS_PRODUCT_VIEW",icon:SettingsIcon},
+      {label:"Produk Pinjaman",href:"/loans/products",permission:"LOAN_PRODUCT_VIEW",icon:SettingsIcon},
+    ]},
   ]},
   {label:"Operasional",icon:InventoryIcon,groups:[{items:[
     {label:"Anggota",href:"/members",permission:"MEMBER_VIEW",icon:UsersIcon},
     {label:"Stok & Gudang",href:"/inventory",permission:"INVENTORY_VIEW",icon:InventoryIcon},
-    {label:"Pembelian",href:"/procurement",permission:"PURCHASE_VIEW",icon:TransactionIcon},
+    {label:"Pembelian",href:"/procurement",permission:"PURCHASE_VIEW",icon:PurchaseIcon},
     {label:"Hutang Pemasok",href:"/procurement/ap",permission:"AP_VIEW",icon:FinanceIcon},
   ]}]},
   {label:"Keuangan",icon:FinanceIcon,groups:[{items:[
     {label:"Ringkasan Keuangan",href:"/finance",permission:"FINANCE_VIEW",icon:FinanceIcon},
-    {label:"Kas & Bank",href:"/finance/treasury",permission:"FINANCE_VIEW"},
-    {label:"Jurnal",href:"/finance/journals",permission:"FINANCE_VIEW"},
-    {label:"Aset Tetap",href:"/finance/assets",permission:"FINANCE_VIEW"},
-    {label:"Kesiapan Tutup Buku",href:"/finance/closing-readiness",permission:"FINANCE_VIEW"},
+    {label:"Kas & Bank",href:"/finance/treasury",permission:"FINANCE_VIEW",icon:BankIcon},
+    {label:"Jurnal",href:"/finance/journals",permission:"FINANCE_VIEW",icon:JournalIcon},
+    {label:"Aset Tetap",href:"/finance/assets",permission:"FINANCE_VIEW",icon:AssetIcon},
+    {label:"Kesiapan Tutup Buku",href:"/finance/closing-readiness",permission:"FINANCE_VIEW",icon:ApprovalIcon},
     {label:"Pengaturan Akuntansi",href:"/finance/settings",anyPermissions:["ACCOUNTING_MANAGE","ACCOUNTING_APPROVE"],icon:SettingsIcon},
   ]}]},
-  {label:"Persetujuan",icon:TransactionIcon,direct:{label:"Pusat Persetujuan",href:"/approvals",anyPermissions:["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","SAVINGS_PRODUCT_APPROVE","SAVINGS_ACCOUNT_APPROVE","LOAN_PRODUCT_APPROVE","LOAN_APPLICATION_APPROVE","LOAN_DISBURSEMENT_APPROVE","LOAN_PENALTY_WAIVE_APPROVE","LOAN_CORRECTION_APPROVE","ORG_MANAGE"]}},
+  {label:"Persetujuan",icon:ApprovalIcon,direct:{label:"Pusat Persetujuan",href:"/approvals",icon:ApprovalIcon,anyPermissions:["APPROVAL_VIEW","PURCHASE_APPROVE","INVOICE_APPROVE","JOURNAL_APPROVE","ASSET_APPROVE","SAVINGS_PRODUCT_APPROVE","SAVINGS_ACCOUNT_APPROVE","LOAN_PRODUCT_APPROVE","LOAN_APPLICATION_APPROVE","LOAN_DISBURSEMENT_APPROVE","LOAN_PENALTY_WAIVE_APPROVE","LOAN_CORRECTION_APPROVE","ORG_MANAGE"]}},
   {label:"Laporan",icon:ReportIcon,groups:[{items:[
     {label:"Penjualan Harian",href:"/reports/daily-sales",permission:"REPORT_VIEW",icon:ReportIcon},
-    {label:"Simpanan",href:"/savings/reports",anyPermissions:["SAVINGS_TX_VIEW","SAVINGS_TRANSACTION_VIEW","REPORT_VIEW"]},
-    {label:"Pinjaman",href:"/loans/reports",permission:"LOAN_REPORT_VIEW"},
+    {label:"Laporan Simpanan",href:"/savings/reports",anyPermissions:["SAVINGS_TX_VIEW","SAVINGS_TRANSACTION_VIEW","REPORT_VIEW"],icon:ReportIcon},
+    {label:"Laporan Pinjaman",href:"/loans/reports",permission:"LOAN_REPORT_VIEW",icon:ReportIcon},
   ]}]},
   {label:"Sistem",icon:SettingsIcon,groups:[{items:[
-    {label:"Kesiapan Rilis",href:"/readiness",permission:"ORG_MANAGE",badge:"Go-Live"},
-    {label:"Kapasitas Sistem",href:"/capacity",permission:"ORG_MANAGE",badge:"Zero Cost"},
-    {label:"Backup & Pemulihan",href:"/capacity/recovery",permission:"ORG_MANAGE"},
+    {label:"Kesiapan Rilis",href:"/readiness",permission:"ORG_MANAGE",badge:"Go-Live",icon:ApprovalIcon},
+    {label:"Kapasitas Sistem",href:"/capacity",permission:"ORG_MANAGE",badge:"Zero Cost",icon:ReportIcon},
+    {label:"Backup & Pemulihan",href:"/capacity/recovery",permission:"ORG_MANAGE",icon:ReceivingIcon},
     {label:"Pengaturan Database",href:"/setup/database",permission:"ORG_MANAGE",badge:"System",icon:SettingsIcon},
   ]}]},
 ];
 
 const transactionActions:NavItem[]=[
-  {label:"POS / Penjualan",href:"/pos",permission:"POS_ACCESS",icon:PosIcon},
-  {label:"Setoran Simpanan",href:"/savings/accounts?intent=deposit",permission:"SAVINGS_DEPOSIT",icon:TransactionIcon},
-  {label:"Penarikan Simpanan",href:"/savings/accounts?intent=withdraw",permission:"SAVINGS_WITHDRAW",icon:TransactionIcon},
-  {label:"Angsuran Pinjaman",href:"/loans/repayments",permission:"LOAN_REPAYMENT_VIEW",icon:FinanceIcon},
-  {label:"Ajukan Pinjaman",href:"/loans/applications",permission:"LOAN_APPLICATION_VIEW",icon:TransactionIcon},
-  {label:"Pembelian / Penerimaan",href:"/procurement",permission:"PURCHASE_VIEW",icon:InventoryIcon},
+  {label:"Penjualan",description:"Buka kasir dan catat penjualan",href:"/pos",permission:"POS_ACCESS",icon:PosIcon},
+  {label:"Simpanan Masuk",description:"Catat setoran simpanan anggota",href:"/savings/accounts?intent=deposit",permission:"SAVINGS_DEPOSIT",icon:SavingsDepositIcon},
+  {label:"Penarikan Simpanan",description:"Catat pengambilan simpanan anggota",href:"/savings/accounts?intent=withdraw",permission:"SAVINGS_WITHDRAW",icon:SavingsWithdrawIcon},
+  {label:"Angsuran Masuk",description:"Terima pembayaran angsuran pinjaman",href:"/loans/repayments",permission:"LOAN_REPAYMENT_VIEW",icon:RepaymentIcon},
+  {label:"Pengajuan Pinjaman",description:"Buat pengajuan pinjaman baru",href:"/loans/applications",permission:"LOAN_APPLICATION_VIEW",icon:LoanApplicationIcon},
+  {label:"Pembelian / Penerimaan",description:"Buka alur pembelian dan barang masuk",href:"/procurement",permission:"PURCHASE_VIEW",icon:PurchaseIcon},
 ];
 
 const noShell=new Set(["/","/login"]);
 function allowed(item:NavItem,permissions:Set<string>){if(item.permission&&!permissions.has(item.permission))return false;if(item.anyPermissions?.length&&!item.anyPermissions.some(code=>permissions.has(code)))return false;return true}
 function baseHref(href:string){return href.split("?")[0]||href}
-function itemActive(pathname:string,item:NavItem){const href=baseHref(item.href);return pathname===href||pathname.startsWith(`${href}/`)}
+function itemActive(pathname:string,searchParams:SearchParamsLike,item:NavItem){
+  const [href,query]=item.href.split("?");
+  const pathMatches=pathname===href||pathname.startsWith(`${href}/`);
+  if(!pathMatches)return false;
+  if(query){const expected=new URLSearchParams(query);let matches=true;expected.forEach((value,key)=>{if(searchParams.get(key)!==value)matches=false});return matches}
+  if(item.exact)return pathname===href&&searchParams.toString()==="";
+  return true;
+}
 function moduleItems(module:NavModule){return module.direct?[module.direct]:(module.groups??[]).flatMap(group=>group.items)}
 
 export function AppNavigationShellV2({access,children}:{access:ShellAccess;children:ReactNode}){
-  const pathname=usePathname(),router=useRouter();
+  const pathname=usePathname(),searchParams=useSearchParams(),router=useRouter();
   const [pendingHref,setPendingHref]=useState<string|null>(null),[navigationPending,setNavigationPending]=useState(false),[menuOpen,setMenuOpen]=useState(false),[transactionOpen,setTransactionOpen]=useState(false),[openModules,setOpenModules]=useState<Set<string>>(()=>new Set());
   const permissions=useMemo(()=>new Set(access.permissions),[access.permissions]);
   const visibleModules=useMemo(()=>modules.map(module=>{
@@ -94,24 +111,24 @@ export function AppNavigationShellV2({access,children}:{access:ShellAccess;child
     return groups.length?{...module,groups}:null;
   }).filter(Boolean) as NavModule[],[permissions]);
   const allItems=visibleModules.flatMap(module=>moduleItems(module));
-  const active=allItems.filter(item=>itemActive(pathname,item)).sort((a,b)=>baseHref(b.href).length-baseHref(a.href).length)[0];
-  const activeModule=visibleModules.find(module=>moduleItems(module).some(item=>itemActive(pathname,item)));
+  const active=allItems.filter(item=>itemActive(pathname,searchParams,item)).sort((a,b)=>b.href.length-a.href.length)[0];
+  const activeModule=visibleModules.find(module=>moduleItems(module).some(item=>itemActive(pathname,searchParams,item)));
   const displayedActiveHref=pendingHref||active?.href;
   const firstName=access.profile.fullName.trim().split(/\s+/)[0]||"U";
   const reportHref=allItems.find(item=>item.href==="/loans/reports"&&allowed(item,permissions))?.href||allItems.find(item=>item.href==="/savings/reports"&&allowed(item,permissions))?.href||allItems.find(item=>item.href==="/reports/daily-sales"&&allowed(item,permissions))?.href||"/dashboard";
   const simpanPinjamHref=simpanPinjamPermissions.some(code=>permissions.has(code))?"/simpan-pinjam":"/dashboard";
   const visibleTransactions=transactionActions.filter(item=>allowed(item,permissions));
 
-  useEffect(()=>{setPendingHref(null);setNavigationPending(false);setMenuOpen(false);setTransactionOpen(false);setOpenModules(activeModule&&!activeModule.direct?new Set([activeModule.label]):new Set())},[pathname,activeModule?.label]);
+  useEffect(()=>{setPendingHref(null);setNavigationPending(false);setMenuOpen(false);setTransactionOpen(false);setOpenModules(activeModule&&!activeModule.direct?new Set([activeModule.label]):new Set())},[pathname,searchParams,activeModule?.label]);
   useEffect(()=>{if(!navigationPending)return;const timer=window.setTimeout(()=>{setPendingHref(null);setNavigationPending(false)},8000);return()=>window.clearTimeout(timer)},[navigationPending]);
 
   function warmRoute(href:string){const base=baseHref(href);if(base!==pathname)router.prefetch(base)}
-  function beginNavigation(href?:string){if(href&&baseHref(href)===pathname&&!href.includes("?"))return;if(href){setPendingHref(href);router.prefetch(baseHref(href))}setNavigationPending(true)}
+  function beginNavigation(href?:string){if(href&&href===`${pathname}${searchParams.toString()?`?${searchParams.toString()}`:""}`)return;if(href){setPendingHref(href);router.prefetch(baseHref(href))}setNavigationPending(true)}
   function back(){beginNavigation();if(window.history.length>1)router.back();else router.push("/dashboard")}
   function toggleModule(label:string){setOpenModules(current=>current.has(label)?new Set():new Set([label]))}
   if(noShell.has(pathname))return <>{children}</>;
 
-  const renderItem=(item:NavItem,compact=false)=>{const Icon=item.icon;const isPending=pendingHref===item.href;return <Link href={item.href} prefetch className={`${compact?"kdk-subnav-item":"nav-item"} ${displayedActiveHref===item.href||itemActive(pathname,item)?"active":""} ${isPending?"pending":""}`} key={item.href+item.label} onPointerEnter={()=>warmRoute(item.href)} onFocus={()=>warmRoute(item.href)} onClick={()=>beginNavigation(item.href)}>{Icon?<Icon size={compact?16:18}/>:compact?null:<span className="nav-icon-placeholder"/>}<span className="nav-label">{item.label}</span>{isPending?<small>Membuka…</small>:item.badge?<small>{item.badge}</small>:null}</Link>};
+  const renderItem=(item:NavItem,compact=false)=>{const Icon=item.icon;const isPending=pendingHref===item.href;const isActive=displayedActiveHref===item.href||itemActive(pathname,searchParams,item);return <Link href={item.href} prefetch className={`${compact?"kdk-subnav-item":"nav-item"} ${isActive?"active":""} ${isPending?"pending":""}`} key={item.href+item.label} onPointerEnter={()=>warmRoute(item.href)} onFocus={()=>warmRoute(item.href)} onClick={()=>beginNavigation(item.href)}>{Icon?<Icon size={compact?16:18}/>:compact?null:<span className="nav-icon-placeholder"/>}<span className="nav-label">{item.label}</span>{isPending?<small>Membuka…</small>:item.badge?<small>{item.badge}</small>:null}</Link>};
 
   return <div className={`app-shell kdk-app-shell ${navigationPending?"shell-is-navigating":""}`}>
     <aside className="desktop-sidebar kdk-sidebar">
@@ -131,20 +148,20 @@ export function AppNavigationShellV2({access,children}:{access:ShellAccess;child
     </aside>
 
     <main className="kdk-shell-main">
-      <header className="kdk-topbar"><button type="button" className="kdk-mobile-back" onClick={back} aria-label="Kembali"><ChevronLeftIcon/></button><div className="kdk-topbar-context"><span>KopdesKu</span><strong>{active?.label||activeModule?.label||"Workspace"}</strong></div><div className="kdk-topbar-user"><span>{access.role.name}</span><strong>{firstName}</strong></div></header>
+      <header className="kdk-topbar"><button type="button" className="kdk-mobile-back" onClick={back} aria-label="Kembali"><ChevronLeftIcon/></button><div className="kdk-topbar-context"><span>{activeModule?.label||"KopdesKu"}</span><strong>{active?.label||activeModule?.label||"Workspace"}</strong></div><div className="kdk-topbar-user"><strong>{firstName}</strong><span>{access.role.name}</span></div></header>
       <div className="persistent-content">{children}</div>
     </main>
 
     <nav className="mobile-bottom-nav kdk-mobile-nav" aria-label="Navigasi mobile">
       <Link href="/dashboard" className={pathname==="/dashboard"?"active":""} onClick={()=>beginNavigation("/dashboard")}><HomeIcon size={19}/><span>Beranda</span></Link>
-      <button type="button" className={transactionOpen?"active":""} onClick={()=>setTransactionOpen(true)}><TransactionIcon size={19}/><span>Transaksi</span></button>
+      <button type="button" className={transactionOpen?"active":""} onClick={()=>setTransactionOpen(true)}><QuickActionIcon size={19}/><span>Transaksi</span></button>
       <Link href={simpanPinjamHref} className={pathname.startsWith("/simpan-pinjam")||pathname.startsWith("/savings")||pathname.startsWith("/loans")?"active":""} onClick={()=>beginNavigation(simpanPinjamHref)}><FinanceIcon size={19}/><span>Simpan Pinjam</span></Link>
       <Link href={reportHref} className={pathname.startsWith("/reports")||pathname.endsWith("/reports")?"active":""} onClick={()=>beginNavigation(reportHref)}><ReportIcon size={19}/><span>Laporan</span></Link>
       <button type="button" className={menuOpen?"active":""} onClick={()=>setMenuOpen(true)}><MoreIcon size={19}/><span>Menu</span></button>
     </nav>
 
-    <Drawer open={transactionOpen} title="Pilih Transaksi" description="Akses cepat sesuai pekerjaan Anda." onClose={()=>setTransactionOpen(false)}><div className="kdk-transaction-launcher">{visibleTransactions.map(item=>{const Icon=item.icon||TransactionIcon;return <Link key={item.label} href={item.href} onClick={()=>beginNavigation(item.href)}><span className="kdk-launcher-icon"><Icon size={19}/></span><span><strong>{item.label}</strong><small>{item.label.includes("Setoran")?"Simpanan masuk anggota":item.label.includes("Penarikan")?"Simpanan keluar anggota":item.label.includes("Angsuran")?"Pembayaran angsuran pinjaman":item.label.includes("POS")?"Transaksi penjualan":"Buka alur operasional"}</small></span><ChevronRightIcon size={17}/></Link>})}</div></Drawer>
+    <Drawer open={transactionOpen} title="Transaksi" description="Pilih pekerjaan yang akan dilakukan." onClose={()=>setTransactionOpen(false)}><div className="kdk-transaction-launcher">{visibleTransactions.map(item=>{const Icon=item.icon||QuickActionIcon;return <Link key={item.label} href={item.href} onClick={()=>beginNavigation(item.href)}><span className="kdk-launcher-icon"><Icon size={19}/></span><span><strong>{item.label}</strong><small>{item.description}</small></span><ChevronRightIcon size={17}/></Link>})}</div></Drawer>
 
-    <Drawer open={menuOpen} title="Menu KopdesKu" description="Pilih area kerja, lalu buka submenu yang diperlukan." onClose={()=>setMenuOpen(false)}><div className="kdk-mobile-domain-list">{visibleModules.map(module=>{const Icon=module.icon;if(module.direct){const item=module.direct;return <Link className="kdk-mobile-domain-link" key={module.label} href={item.href} onClick={()=>beginNavigation(item.href)}><Icon size={18}/><span>{module.label}</span><ChevronRightIcon size={16}/></Link>}return <details className="kdk-mobile-domain" key={module.label} open={activeModule?.label===module.label?true:undefined}><summary><Icon size={18}/><span>{module.label}</span><ChevronRightIcon size={16}/></summary><div className="kdk-mobile-domain-body">{module.groups?.map((group,index)=><section key={`${module.label}-mobile-${group.label||index}`}><h3>{group.label||module.label}</h3>{group.items.map(item=>{const ItemIcon=item.icon||module.icon;return <Link key={item.href+item.label} href={item.href} onClick={()=>beginNavigation(item.href)}><ItemIcon size={16}/><span>{item.label}</span></Link>})}</section>)}</div></details>})}</div><section className="kdk-more-group kdk-account-group"><h3>Akun</h3><LogoutButton/></section></Drawer>
+    <Drawer open={menuOpen} title="Menu KopdesKu" description="Pilih area kerja, lalu buka menu yang diperlukan." onClose={()=>setMenuOpen(false)}><div className="kdk-mobile-domain-list">{visibleModules.map(module=>{const Icon=module.icon;if(module.direct){const item=module.direct;return <Link className="kdk-mobile-domain-link" key={module.label} href={item.href} onClick={()=>beginNavigation(item.href)}><Icon size={18}/><span>{module.label}</span><ChevronRightIcon size={16}/></Link>}return <details className="kdk-mobile-domain" key={module.label} open={activeModule?.label===module.label?true:undefined}><summary><Icon size={18}/><span>{module.label}</span><ChevronRightIcon size={16}/></summary><div className="kdk-mobile-domain-body">{module.groups?.map((group,index)=><section key={`${module.label}-mobile-${group.label||index}`}><h3>{group.label||module.label}</h3>{group.items.map(item=>{const ItemIcon=item.icon||module.icon;return <Link key={item.href+item.label} href={item.href} onClick={()=>beginNavigation(item.href)}><ItemIcon size={16}/><span>{item.label}</span></Link>})}</section>)}</div></details>})}</div><section className="kdk-more-group kdk-account-group"><h3>Akun</h3><LogoutButton/></section></Drawer>
   </div>;
 }

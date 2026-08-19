@@ -1,4 +1,4 @@
-/* KopdesKu v1.3 adapter layer: presentation-only refinement. Brand assets and canonical colors remain unchanged. */
+/* KopdesKu v1.4 operational UX adapter. Brand assets and canonical colors remain unchanged. */
 :root{color-scheme:light}
 body{font-family:var(--kdk-font)}
 .app-shell,.persistent-content{background:var(--kdk-bg-page);color:var(--kdk-text-primary)}
@@ -7,15 +7,16 @@ body{font-family:var(--kdk-font)}
 .primary-link:hover,.primary-button:hover:not(:disabled){background:var(--kdk-brand-red-hover)}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:var(--kdk-focus-outline);outline-offset:2px}
 
-/* Calm, professional typography across authenticated workspaces. */
+/* Calm, readable typography across authenticated workspaces. */
 .persistent-content{font-size:13.5px}
 .persistent-content h1{font-size:21px!important;font-weight:500!important;line-height:1.3!important;letter-spacing:-.012em!important}
 .persistent-content h2{font-size:16px!important;font-weight:500!important;line-height:1.4!important;letter-spacing:-.008em!important}
 .persistent-content h3{font-size:14px!important;font-weight:500!important;line-height:1.45!important;letter-spacing:0!important}
 .persistent-content h4{font-weight:500!important}
 .persistent-content p{font-size:13px;line-height:1.55}
+.persistent-content small{font-size:11px!important;line-height:1.4}
 .persistent-content strong{font-weight:500}
-.persistent-content .kdk-money,.persistent-content .moneyStrong,.persistent-content [class*="metric"]>strong{font-weight:600}
+.persistent-content .kdk-money,.persistent-content .moneyStrong,.persistent-content [class*="metric"]>strong{font-weight:600;font-variant-numeric:tabular-nums}
 .persistent-content label{font-weight:500!important}
 .persistent-content button,.persistent-content a{font-weight:500}
 .persistent-content table{font-size:12px}
@@ -25,30 +26,31 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .persistent-content .workspace-content{padding:16px 18px 38px}
 .persistent-content .welcome-panel{padding:17px 18px;border-radius:14px}
 .persistent-content .metric-card{min-height:94px;padding:13px;border-radius:12px}
-.persistent-content .metric-card>span{font-size:10.5px;font-weight:400}
+.persistent-content .metric-card>span{font-size:11px;font-weight:400}
 .persistent-content .metric-card strong{font-size:18px;font-weight:600}
 .persistent-content .panel-card{padding:15px;border-radius:13px}
 .persistent-content summary{font-weight:500!important}
+.nav-item small,.kdk-subnav-item small{font-size:11px!important;letter-spacing:0!important;text-transform:none!important}
 
-/* Desktop navigation: enough width for meaningful labels; no K.../P... truncation. */
+/* Desktop navigation: enough width for complete labels and calm hierarchy. */
 @media(min-width:768px){
   .kdk-app-shell{grid-template-columns:268px minmax(0,1fr)!important}
   .sidebar-brand{padding-inline:14px!important}
   .sidebar-brand-copy strong{font-size:13px!important;font-weight:500!important}
-  .sidebar-brand-copy small{font-size:10px!important}
+  .sidebar-brand-copy small{font-size:11px!important}
   .nav-item,.kdk-module-trigger{font-size:12.5px!important;font-weight:400!important}
   .kdk-module-panel{padding-left:24px!important}
-  .kdk-subnav-item{min-height:37px!important;height:auto!important;padding:6px 7px!important;font-size:11.5px!important;font-weight:400!important;line-height:1.35!important;align-items:center!important}
+  .kdk-subnav-item{min-height:38px!important;height:auto!important;padding:6px 7px!important;font-size:12px!important;font-weight:400!important;line-height:1.35!important;align-items:center!important}
   .kdk-subnav-item .nav-label{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;display:block!important}
-  .kdk-subnav-group>p{font-size:9.5px!important;font-weight:500!important;letter-spacing:.055em!important;margin-top:7px!important}
-  .sidebar-profile .profile-copy strong{font-size:11.5px!important;font-weight:500!important}
-  .sidebar-profile .profile-copy span{font-size:10px!important}
+  .kdk-subnav-group>p{font-size:11px!important;font-weight:500!important;letter-spacing:.02em!important;margin-top:8px!important}
+  .sidebar-profile .profile-copy strong{font-size:12px!important;font-weight:500!important}
+  .sidebar-profile .profile-copy span{font-size:11px!important}
 }
 
 @media(max-width:1023px) and (min-width:768px){
   .kdk-app-shell{grid-template-columns:238px minmax(0,1fr)!important}
   .kdk-module-panel{padding-left:18px!important}
-  .kdk-subnav-item{font-size:11px!important}
+  .kdk-subnav-item{font-size:11.5px!important}
 }
 
 @media(max-width:767px){
@@ -62,15 +64,18 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .persistent-content .workspace-content{padding:11px 11px 26px}
   .persistent-content .welcome-panel{padding:13px;border-radius:12px}
   .persistent-content .metric-card{min-height:82px;padding:11px}
+  .persistent-content .metric-card>span{font-size:11px}
   .persistent-content .metric-card strong{font-size:16px}
   .persistent-content .panel-card{padding:12px;border-radius:12px}
   .persistent-content input,.persistent-content select,.persistent-content textarea{font-size:16px!important}
   .persistent-content button,.persistent-content [role="button"],.persistent-content input[type="submit"]{min-height:44px}
   .persistent-content form{gap:9px}
   .persistent-content details>summary{min-height:44px;display:flex;align-items:center}
-  .kdk-mobile-nav a,.kdk-mobile-nav button{font-size:9.5px!important;font-weight:400!important;letter-spacing:0!important}
+  .kdk-mobile-nav a,.kdk-mobile-nav button{font-size:11px!important;font-weight:400!important;letter-spacing:0!important}
   .kdk-mobile-nav span{width:100%;max-width:none!important;overflow:visible!important;text-overflow:clip!important;white-space:nowrap!important;text-align:center}
-  .kdk-transaction-launcher strong{font-weight:500!important}
-  .kdk-mobile-domain-link,.kdk-mobile-domain summary{font-weight:500!important}
+  .kdk-transaction-launcher strong{font-size:13px!important;font-weight:500!important}
+  .kdk-transaction-launcher small{font-size:11px!important}
+  .kdk-mobile-domain-link,.kdk-mobile-domain summary{font-size:13px!important;font-weight:500!important}
+  .kdk-mobile-domain-body h3{font-size:11px!important;letter-spacing:.02em!important}
   .kdk-mobile-domain-body a{font-size:13px!important;line-height:1.35!important}
 }
