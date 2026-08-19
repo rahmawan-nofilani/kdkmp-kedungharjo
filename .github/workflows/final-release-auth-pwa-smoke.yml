@@ -47,7 +47,7 @@ jobs:
           from playwright.sync_api import sync_playwright,expect
 
           BASE=os.environ['UAT_BASE_URL'].rstrip('/')
-          stage='public'; route=''; install_errors=[]
+          stage='public'; route=''; install_errors=[]; pos_mode='not-checked'
           routes=[
             '/dashboard','/simpan-pinjam',
             '/savings/accounts?intent=deposit','/savings/accounts?intent=withdraw',
@@ -147,21 +147,29 @@ jobs:
                       page.goto(BASE+route,wait_until='networkidle')
                       assert_healthy(page,route)
 
-                  stage='pos-mobile-switcher'
+                  stage='pos-mobile-state'
                   page.goto(BASE+'/pos',wait_until='networkidle')
-                  assert_healthy(page,'/pos')
-                  products=page.get_by_role('button',name='Produk',exact=True)
-                  cart=page.get_by_role('button',name=re.compile(r'^Keranjang'))
-                  expect(products).to_be_visible(); expect(cart).to_be_visible()
-                  cart.click(); expect(page.get_by_text('Transaksi baru',exact=True)).to_be_visible()
-                  products.click(); expect(page.get_by_text('Pilih barang',exact=True)).to_be_visible()
+                  if page.url.startswith(BASE+'/teller'):
+                      assert_healthy(page,'/teller')
+                      teller_text=normalized(page)
+                      if 'shift' not in teller_text.lower():
+                          raise RuntimeError('POS redirected to teller without an observable shift guard/context')
+                      pos_mode='official-no-open-shift-guard'
+                  else:
+                      assert_healthy(page,'/pos')
+                      products=page.get_by_role('button',name='Produk',exact=True)
+                      cart=page.get_by_role('button',name=re.compile(r'^Keranjang'))
+                      expect(products).to_be_visible(); expect(cart).to_be_visible()
+                      cart.click(); expect(page.get_by_text('Transaksi baru',exact=True)).to_be_visible()
+                      products.click(); expect(page.get_by_text('Pilih barang',exact=True)).to_be_visible()
+                      pos_mode='product-cart-switcher'
 
                   page.goto(BASE+'/dashboard',wait_until='networkidle')
                   page.screenshot(path='/tmp/kdkmp-final-smoke/dashboard-mobile.png',full_page=True)
                   page.goto(BASE+'/simpan-pinjam',wait_until='networkidle')
                   page.screenshot(path='/tmp/kdkmp-final-smoke/simpan-pinjam-mobile.png',full_page=True)
                   page.goto(BASE+'/pos',wait_until='networkidle')
-                  page.screenshot(path='/tmp/kdkmp-final-smoke/pos-mobile.png',full_page=True)
+                  page.screenshot(path='/tmp/kdkmp-final-smoke/pos-or-teller-mobile.png',full_page=True)
 
                   stage='logout'
                   page.goto(BASE+'/dashboard',wait_until='networkidle')
@@ -176,10 +184,10 @@ jobs:
                   if not page.url.startswith(BASE+'/login'):
                       raise RuntimeError('Protected dashboard remained accessible after logout')
 
-                  out('failure_stage',''); out('failure_route',''); out('installability_errors',json.dumps(install_errors,ensure_ascii=False))
+                  out('failure_stage',''); out('failure_route',''); out('installability_errors',json.dumps(install_errors,ensure_ascii=False)); out('pos_mode',pos_mode)
                   print('Final authenticated release smoke PASS')
               except Exception:
-                  out('failure_stage',stage); out('failure_route',route); out('installability_errors',json.dumps(install_errors,ensure_ascii=False))
+                  out('failure_stage',stage); out('failure_route',route); out('installability_errors',json.dumps(install_errors,ensure_ascii=False)); out('pos_mode',pos_mode)
                   try: page.screenshot(path='/tmp/kdkmp-final-smoke/failure.png',full_page=True)
                   except Exception: pass
                   traceback.print_exc(); raise
@@ -191,8 +199,9 @@ jobs:
         if: success()
         env:
           INSTALL_ERRORS: ${{ steps.smoke.outputs.installability_errors }}
+          POS_MODE: ${{ steps.smoke.outputs.pos_mode }}
         run: |
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA mobile smoke PASS. Run \`$GITHUB_RUN_ID\`: production HTTPS manifest/start_url/standalone/icons loaded; Chromium manifest diagnostics had no parse errors; SUPER_ADMIN login passed; 390x844 mobile bottom navigation, Transaksi launcher, domain-first Menu, Simpan Pinjam hierarchy, POS Produk↔Keranjang switcher, all certified routes, page-level horizontal-overflow guard, and Menu → Keluar session protection passed. Chromium installability diagnostics: \`${INSTALL_ERRORS:-[]}\`. Physical OS/browser install-button interaction remains device UI and is not fabricated by this headless check."
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA mobile smoke PASS. Run \`$GITHUB_RUN_ID\`: production HTTPS manifest/start_url/standalone/icons loaded; Chromium manifest diagnostics had no parse errors; SUPER_ADMIN login passed; 390x844 mobile bottom navigation, Transaksi launcher, domain-first Menu, Simpan Pinjam hierarchy, all certified routes, page-level horizontal-overflow guard, and Menu → Keluar session protection passed. POS mobile state: \`${POS_MODE:-not-recorded}\` (the Produk↔Keranjang switcher is asserted whenever the authenticated actor has an OPEN teller shift; otherwise the official no-open-shift guard is asserted without mutating shift state). Chromium installability diagnostics: \`${INSTALL_ERRORS:-[]}\`. Physical OS/browser install-button interaction remains device UI and is not fabricated by this headless check."
 
       - name: Record failure
         if: failure()
@@ -200,8 +209,9 @@ jobs:
           STAGE: ${{ steps.smoke.outputs.failure_stage }}
           ROUTE: ${{ steps.smoke.outputs.failure_route }}
           INSTALL_ERRORS: ${{ steps.smoke.outputs.installability_errors }}
+          POS_MODE: ${{ steps.smoke.outputs.pos_mode }}
         run: |
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA mobile smoke did not PASS. Run \`$GITHUB_RUN_ID\`; stage \`${STAGE:-setup}\`; route \`${ROUTE:-none}\`; Chromium installability diagnostics \`${INSTALL_ERRORS:-[]}\`. Inspect v1.3 responsive/release gate before sign-off."
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA mobile smoke did not PASS. Run \`$GITHUB_RUN_ID\`; stage \`${STAGE:-setup}\`; route \`${ROUTE:-none}\`; POS mode \`${POS_MODE:-not-recorded}\`; Chromium installability diagnostics \`${INSTALL_ERRORS:-[]}\`. Inspect v1.3 responsive/release gate before sign-off."
 
       - name: Upload screenshots
         if: always()
