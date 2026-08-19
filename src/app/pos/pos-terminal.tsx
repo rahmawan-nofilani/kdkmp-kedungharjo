@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { CartItem, PaymentSummary, ProductCard } from "@/components/domain/transaction-components";
 import { commitCashSaleAction, type CashSaleActionState } from "./actions";
 import styles from "./pos.module.css";
+import mobileStyles from "./pos-mobile.module.css";
 
 type Product={id:string;sku:string;barcode:string|null;name:string;unit_name:string;sell_amount:number;stock_qty:number;track_stock:number};
 type Member={id:string;member_number:string;full_name:string};
@@ -38,9 +39,10 @@ export function PosTerminal({products,members,warehouseName}:{products:Product[]
   const [cart,setCart]=useState<CartLine[]>([]);
   const [memberId,setMemberId]=useState("");
   const [idempotencyKey,setIdempotencyKey]=useState("");
+  const [mobileView,setMobileView]=useState<"catalog"|"cart">("catalog");
 
   useEffect(()=>{setIdempotencyKey(crypto.randomUUID())},[]);
-  useEffect(()=>{if(actionState.status!=="success"||!actionState.saleId||handledSale.current===actionState.saleId)return;handledSale.current=actionState.saleId;setCart([]);setMemberId("");setIdempotencyKey(crypto.randomUUID());router.refresh()},[actionState,router]);
+  useEffect(()=>{if(actionState.status!=="success"||!actionState.saleId||handledSale.current===actionState.saleId)return;handledSale.current=actionState.saleId;setCart([]);setMemberId("");setMobileView("catalog");setIdempotencyKey(crypto.randomUUID());router.refresh()},[actionState,router]);
 
   const matchingProducts=useMemo(()=>{const q=query.trim().toLowerCase();if(!q)return products;return products.filter((product)=>[product.sku,product.barcode,product.name].filter(Boolean).some((value)=>String(value).toLowerCase().includes(q)))},[products,query]);
   const visibleProducts=useMemo(()=>matchingProducts.slice(0,60),[matchingProducts]);
@@ -55,19 +57,24 @@ export function PosTerminal({products,members,warehouseName}:{products:Product[]
     {actionState.status==="success"?<div className={styles.successBanner}><div><span>{actionState.duplicate?"TRANSAKSI DUPLIKAT DICEGAH":"TRANSAKSI BERHASIL"}</span>{actionState.saleId?<Link className={styles.receiptLink} href={`/sales/${actionState.saleId}`}>{actionState.receiptNumber||"Buka struk transaksi"}</Link>:<strong>{actionState.receiptNumber||"Receipt tersimpan"}</strong>}</div><strong>{rupiah(actionState.totalAmount||0)}</strong></div>:null}
     {actionState.status==="error"?<div className={styles.errorBanner}>{actionState.message||"Transaksi belum dapat diproses."}</div>:null}
 
+    <div className={mobileStyles.mobileTabs} aria-label="Tampilan POS mobile">
+      <button type="button" className={mobileView==="catalog"?mobileStyles.active:""} aria-pressed={mobileView==="catalog"} onClick={()=>setMobileView("catalog")}>Produk</button>
+      <button type="button" className={mobileView==="cart"?mobileStyles.active:""} aria-pressed={mobileView==="cart"} onClick={()=>setMobileView("cart")}>Keranjang <small>{totalQty}</small></button>
+    </div>
+
     <div className={styles.terminalGrid}>
-      <section className={styles.catalogPanel}>
+      <section className={`${styles.catalogPanel} ${mobileView==="cart"?mobileStyles.mobileHidden:""}`}>
         <div className={styles.catalogHeader}><div><span className={styles.kicker}>KATALOG · {warehouseName}</span><h2>Pilih barang</h2></div><div className={styles.searchBox}><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Cari nama, SKU, atau barcode..." aria-label="Cari produk" autoFocus/></div></div>
         <div className={styles.catalogMeta}><span>{matchingProducts.length} produk cocok</span>{matchingProducts.length>visibleProducts.length?<small>60 pertama ditampilkan · gunakan pencarian untuk produk lainnya</small>:null}</div>
         <div className={styles.productGrid}>{visibleProducts.map((product)=><ProductButton product={product} onAdd={addProduct} key={product.id}/>)}</div>
         {!matchingProducts.length?<div className={styles.empty}>Produk tidak ditemukan.</div>:null}
       </section>
 
-      <aside className={styles.cartPanel}>
+      <aside className={`${styles.cartPanel} ${mobileView==="catalog"?mobileStyles.mobileHidden:""}`}>
         <div className={styles.cartHeader}><div><span className={styles.kicker}>KERANJANG</span><h2>Transaksi baru</h2></div><span className={styles.cartCount}>{totalQty} item</span></div>
         <MemberSelector members={members} value={memberId} onChange={changeMember}/>
-        <div className={styles.cartLines}>{cart.length?cart.map((line)=>{const atStockLimit=Boolean(line.product.track_stock&&line.quantity>=line.product.stock_qty);return <CartItem key={line.product.id} name={line.product.name} unitPrice={line.product.sell_amount} unitName={line.product.unit_name} quantity={line.quantity} total={line.product.sell_amount*line.quantity} atStockLimit={atStockLimit} onDecrease={()=>changeQuantity(line.product.id,-1)} onIncrease={()=>changeQuantity(line.product.id,1)} onRemove={()=>removeLine(line.product.id)}/>}):<div className={styles.emptyCart}>Klik produk untuk menambah ke keranjang.</div>}</div>
-        <div className={styles.checkoutDock}><PaymentSummary subtotal={total} total={total}/><form action={formAction} className={styles.checkoutForm}><input type="hidden" name="itemsJson" value={itemsJson}/><input type="hidden" name="memberId" value={memberId}/><input type="hidden" name="idempotencyKey" value={idempotencyKey}/><CheckoutButton disabled={!cart.length||!idempotencyKey} total={total}/><p>Hasil transaksi tampil tanpa redirect penuh. Stok dan laporan direfresh setelah commit berhasil.</p></form></div>
+        <div className={styles.cartLines}>{cart.length?cart.map((line)=>{const atStockLimit=Boolean(line.product.track_stock&&line.quantity>=line.product.stock_qty);return <CartItem key={line.product.id} name={line.product.name} unitPrice={line.product.sell_amount} unitName={line.product.unit_name} quantity={line.quantity} total={line.product.sell_amount*line.quantity} atStockLimit={atStockLimit} onDecrease={()=>changeQuantity(line.product.id,-1)} onIncrease={()=>changeQuantity(line.product.id,1)} onRemove={()=>removeLine(line.product.id)}/>}):<div className={styles.emptyCart}>Belum ada item. Buka tab Produk untuk menambahkan barang.</div>}</div>
+        <div className={styles.checkoutDock}><PaymentSummary subtotal={total} total={total}/><form action={formAction} className={styles.checkoutForm}><input type="hidden" name="itemsJson" value={itemsJson}/><input type="hidden" name="memberId" value={memberId}/><input type="hidden" name="idempotencyKey" value={idempotencyKey}/><CheckoutButton disabled={!cart.length||!idempotencyKey} total={total}/><p>Stok dan laporan direfresh setelah transaksi berhasil.</p></form></div>
       </aside>
     </div>
   </>;
