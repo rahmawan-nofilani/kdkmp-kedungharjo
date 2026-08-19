@@ -1,0 +1,204 @@
+name: Finance Three Blocker Cleanup UAT
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  finance-cleanup:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-FINANCE-CLEANUP' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 12
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_MANAGER_EMAIL: nofilanirahmawan@gmail.com
+      UAT_MANAGER_PASSWORD: ${{ secrets.UAT_MANAGER_PASSWORD }}
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      OPENING_JOURNAL_ID: c8d8f885-4ca7-4b49-93c6-8ea7f99d5c83
+      OPENING_JOURNAL_NUMBER: OB-MSRH1LUA-D4210
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard credentials
+        shell: bash
+        run: |
+          test -n "$UAT_MANAGER_PASSWORD"
+          test -n "$UAT_SUPERADMIN_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Cancel empty opening draft, close legacy shift, post August depreciation
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-finance-cleanup
+          python <<'PY'
+          import os,re,traceback
+          from playwright.sync_api import sync_playwright,expect
+
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          JID=os.environ['OPENING_JOURNAL_ID']
+          JNO=os.environ['OPENING_JOURNAL_NUMBER']
+          stage='setup'; journal='unknown'; shift='unknown'; depreciation='unknown'; run_no=''
+
+          def out(k,v):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+                  f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
+
+          def login(page,email,password):
+              page.goto(BASE+'/login',wait_until='networkidle')
+              page.get_by_label('Email',exact=True).fill(email)
+              page.get_by_label('Kata sandi',exact=True).fill(password)
+              page.get_by_role('button',name='Masuk ke KDKMP').click()
+              page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+
+          def body(page):
+              return re.sub(r'\s+',' ',page.locator('body').inner_text().replace('\u00a0',' '))
+
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True)
+              manager=browser.new_context(); mp=manager.new_page(); mp.set_default_timeout(15000)
+              checker=browser.new_context(); cp=checker.new_page(); cp.set_default_timeout(15000)
+              try:
+                  stage='manager-login'
+                  login(mp,os.environ['UAT_MANAGER_EMAIL'],os.environ['UAT_MANAGER_PASSWORD'])
+
+                  # 1) Existing empty Opening Balance DRAFT: maker must cancel it.
+                  stage='opening-journal'
+                  mp.goto(BASE+f'/finance/journals/{JID}',wait_until='networkidle')
+                  expect(mp.get_by_role('heading',name=JNO)).to_be_visible()
+                  txt=body(mp)
+                  if re.search(r'\bDRAFT\b',txt) and 'Belum ada journal line.' in txt:
+                      btn=mp.get_by_role('button',name='Cancel DRAFT')
+                      expect(btn).to_be_visible(); btn.click()
+                      mp.wait_for_url(re.compile(r'.*/finance/journals\?status=cancelled$'),timeout=20000)
+                      journal='cancelled'
+                  else:
+                      # Resume-safe: if no longer DRAFT, do not mutate it again.
+                      journal='already-resolved'
+
+                  # 2) Legacy MANAGER shift: it has no transactions; counted cash must equal opening Rp100k.
+                  stage='legacy-shift'
+                  mp.goto(BASE+'/closing',wait_until='networkidle')
+                  txt=body(mp)
+                  if 'Tidak ada shift aktif untuk akun ini.' in txt:
+                      shift='already-closed'
+                  else:
+                      expect(mp.get_by_role('heading',name='Penutupan & Rekonsiliasi Kasir')).to_be_visible()
+                      expect(mp.get_by_text('PASS',exact=True).first).to_be_visible()
+                      if not re.search(r'Kas seharusnya\s*Rp\s*100\.000',txt,re.I):
+                          raise RuntimeError('Legacy MANAGER shift expected cash is not Rp100.000; stop before close')
+                      field=mp.locator('input[name="countedCashAmount"]')
+                      field.fill('100000')
+                      mp.get_by_role('button',name='Tutup Shift & Catat Rekonsiliasi').click()
+                      mp.wait_for_url(re.compile(r'.*/closing\?status=shift-closed&variance=0$'),timeout=20000)
+                      expect(mp.get_by_text(re.compile(r'Shift berhasil ditutup.*Rp\s*0',re.I))).to_be_visible()
+                      shift='closed-zero-variance'
+
+                  # 3) MANAGER creates August depreciation only if no run exists.
+                  stage='depreciation-maker'
+                  mp.goto(BASE+'/finance/assets',wait_until='networkidle')
+                  run_rows=mp.locator('table tbody tr').filter(has_text='2026-08')
+                  if run_rows.count()==0:
+                      form=mp.locator('form').filter(has=mp.get_by_role('button',name='Hitung Penyusutan Bulan Ini')).first
+                      expect(form).to_be_visible()
+                      form.locator('input[name="periodMonth"]').fill('2026-08')
+                      form.locator('input[name="notes"]').fill('UAT Finance closing - August depreciation')
+                      form.get_by_role('button',name='Hitung Penyusutan Bulan Ini').click()
+                      mp.wait_for_url(re.compile(r'.*/finance/assets\?status=perhitungan-penyusutan-dibuat$'),timeout=20000)
+                      mp.wait_for_load_state('networkidle')
+                      run_rows=mp.locator('table tbody tr').filter(has_text='2026-08')
+                  if run_rows.count()==0: raise RuntimeError('August depreciation run not visible after maker step')
+                  row=run_rows.first
+                  cells=row.locator('td')
+                  if cells.count()>=2: run_no=(cells.nth(1).inner_text() or '').strip()
+                  depreciation='draft-or-existing'
+
+                  # 4) Different checker posts DRAFT depreciation; resume-safe if already POSTED.
+                  stage='checker-login'
+                  login(cp,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD'])
+                  stage='depreciation-checker'
+                  cp.goto(BASE+'/finance/assets',wait_until='networkidle')
+                  row=cp.locator('table tbody tr').filter(has_text='2026-08').first
+                  expect(row).to_be_visible()
+                  if row.get_by_role('button',name='Periksa & Catat Penyusutan').count():
+                      row.get_by_role('button',name='Periksa & Catat Penyusutan').click()
+                      cp.wait_for_url(re.compile(r'.*/finance/assets\?status=penyusutan-dicatat-ke-jurnal$'),timeout=20000)
+                      cp.wait_for_load_state('networkidle')
+                      row=cp.locator('table tbody tr').filter(has_text='2026-08').first
+                  if 'Sudah dicatat' not in (row.inner_text() or ''):
+                      raise RuntimeError('August depreciation run is not POSTED after checker step')
+                  depreciation='posted'
+
+                  # Verify the three blockers are gone. Bank monthly coverage may still remain pending because
+                  # existing REC-MSZS1YQV-7E78E legitimately covers 2026-08-01..19 only.
+                  stage='closing-readiness'
+                  cp.goto(BASE+'/finance/closing-readiness?month=2026-08',wait_until='networkidle')
+                  expect(cp.get_by_role('heading',name='Kesiapan Tutup Buku')).to_be_visible()
+                  txt=body(cp)
+                  for stale in ['1 jurnal belum selesai.','1 aset masih menunggu penyusutan.','1 shift teller masih OPEN']:
+                      if stale in txt: raise RuntimeError(f'Finance blocker still present: {stale}')
+                  if 'Tidak ada DRAFT/SUBMITTED/APPROVED yang belum selesai.' not in txt:
+                      raise RuntimeError('Controlled journal readiness did not clear')
+                  if 'Semua shift teller yang dimulai sebelum akhir periode sudah ditutup dan direkonsiliasi.' not in txt:
+                      raise RuntimeError('Open teller-shift readiness did not clear')
+                  cp.screenshot(path='/tmp/kdkmp-finance-cleanup/closing-readiness.png',full_page=True)
+                  out('failure_stage',''); out('journal',journal); out('shift',shift); out('depreciation',depreciation); out('run_number',run_no)
+                  print('Finance three-blocker cleanup PASS')
+              except Exception:
+                  out('failure_stage',stage); out('journal',journal); out('shift',shift); out('depreciation',depreciation); out('run_number',run_no)
+                  try: cp.screenshot(path='/tmp/kdkmp-finance-cleanup/failure-checker.png',full_page=True)
+                  except Exception: pass
+                  try: mp.screenshot(path='/tmp/kdkmp-finance-cleanup/failure-manager.png',full_page=True)
+                  except Exception: pass
+                  traceback.print_exc(); raise
+              finally:
+                  manager.close(); checker.close(); browser.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        env:
+          JOURNAL: ${{ steps.uat.outputs.journal }}
+          SHIFT: ${{ steps.uat.outputs.shift }}
+          DEPR: ${{ steps.uat.outputs.depreciation }}
+          RUNNO: ${{ steps.uat.outputs.run_number }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Finance three-blocker cleanup PASS. Run \`$GITHUB_RUN_ID\`. Existing empty Opening Balance DRAFT \`OB-MSRH1LUA-D4210\`: \`$JOURNAL\`; legacy MANAGER teller shift \`290afb45-61b6-4d23-bb34-4eaaefad8c06\`: \`$SHIFT\` with counted/expected Rp100.000 and variance Rp0; August depreciation \`${RUNNO:-existing}\`: \`$DEPR\` using MANAGER maker + different SUPER_ADMIN checker. Closing Readiness no longer reports unfinished controlled journal, missing depreciation, or OPEN teller shift. Existing bank reconciliation \`REC-MSZS1YQV-7E78E\` remains untouched; no accounting period CLOSE/LOCK was performed."
+
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          JOURNAL: ${{ steps.uat.outputs.journal }}
+          SHIFT: ${{ steps.uat.outputs.shift }}
+          DEPR: ${{ steps.uat.outputs.depreciation }}
+          RUNNO: ${{ steps.uat.outputs.run_number }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Finance three-blocker cleanup did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; opening journal \`${JOURNAL:-unknown}\`; legacy shift \`${SHIFT:-unknown}\`; depreciation \`${DEPR:-unknown}\` / \`${RUNNO:-none}\`. Resume from current state; do not recreate bank reconciliation and do not LOCK/CLOSE a real period."
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: finance-three-blocker-cleanup-${{ github.run_id }}
+          path: /tmp/kdkmp-finance-cleanup/*.png
+          if-no-files-found: ignore
+          retention-days: 14
