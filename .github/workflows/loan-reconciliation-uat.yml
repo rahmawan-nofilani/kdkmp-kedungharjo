@@ -1,0 +1,105 @@
+name: Loan Reconciliation UAT
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  loan-reconciliation-uat:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-REPORTS' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 8
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard credential
+        run: test -n "$UAT_SUPERADMIN_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Verify live Loan reconciliation report
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-loan-reports
+          python <<'PY'
+          import os,re,traceback
+          from playwright.sync_api import sync_playwright,expect
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True)
+              page=browser.new_page()
+              page.set_default_timeout(15000)
+              try:
+                  page.goto(BASE+'/login',wait_until='networkidle')
+                  page.get_by_label('Email',exact=True).fill(os.environ['UAT_SUPERADMIN_EMAIL'])
+                  page.get_by_label('Kata sandi',exact=True).fill(os.environ['UAT_SUPERADMIN_PASSWORD'])
+                  page.get_by_role('button',name='Masuk ke KDKMP').click()
+                  page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+                  page.goto(BASE+'/loans/reports',wait_until='networkidle')
+                  expect(page.get_by_role('heading',name='Accounting & Rekonsiliasi Pinjaman')).to_be_visible()
+                  expect(page.get_by_text('Rekonsiliasi pinjaman saat ini seimbang.',exact=True)).to_be_visible()
+                  expect(page.get_by_text('PASS',exact=True).first).to_be_visible()
+                  body=page.locator('body').inner_text()
+                  required=['Principal outstanding','D1 Piutang 1-1200','Bunga terealisasi','Denda terealisasi','Exception']
+                  for label in required:
+                      if label not in body: raise RuntimeError(f'Missing report label: {label}')
+                  # Indonesian currency may include NBSP; normalize all whitespace before checks.
+                  normalized=re.sub(r'\s+',' ',body.replace('\u00a0',' '))
+                  if not re.search(r'Principal outstanding\s*Rp\s*0',normalized):
+                      raise RuntimeError('Principal outstanding is not Rp0 in live report')
+                  if not re.search(r'D1 Piutang 1-1200\s*Rp\s*0\s*gap Rp\s*0',normalized):
+                      raise RuntimeError('D1 receivable/gap is not zero')
+                  if not re.search(r'Bunga terealisasi\s*Rp\s*35\.291\s*expected Rp\s*35\.291',normalized):
+                      raise RuntimeError('Interest realized/expected is not Rp35.291/Rp35.291')
+                  if not re.search(r'Denda terealisasi\s*Rp\s*0\s*expected Rp\s*0',normalized):
+                      raise RuntimeError('Penalty realized/expected is not zero')
+                  if not re.search(r'Exception\s*0',normalized):
+                      raise RuntimeError('Reconciliation exceptions are not zero')
+                  page.screenshot(path='/tmp/kdkmp-loan-reports/pass.png',full_page=True)
+                  print('Loan reconciliation live report PASS')
+              except Exception:
+                  try: page.screenshot(path='/tmp/kdkmp-loan-reports/failure.png',full_page=True)
+                  except Exception: pass
+                  traceback.print_exc(); raise
+              finally:
+                  browser.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan /loans/reports authenticated reconciliation UAT PASS. Run \`$GITHUB_RUN_ID\`. Live report status PASS: Principal outstanding Rp0; D1 Piutang 1-1200 Rp0 with gap Rp0; realized interest Rp35.291 = expected Rp35.291; penalty Rp0 = expected Rp0; reconciliation Exception 0. This is read-only verification against the final Supabase lifecycle state and D1 accounting snapshot."
+
+      - name: Record failure
+        if: failure()
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan /loans/reports authenticated reconciliation UAT did not PASS. Run \`$GITHUB_RUN_ID\`. This check is read-only; no financial mutation was performed. Inspect the report/screenshot before changing Loan certification status."
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-reconciliation-uat-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-reports/*.png
+          if-no-files-found: ignore
+          retention-days: 14
