@@ -3,226 +3,54 @@ import { redirect } from "next/navigation";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { PageContainer, PageHeader } from "@/components/ui/page-layout";
+import { PageContainer,PageHeader } from "@/components/ui/page-layout";
 import { getAccessContext } from "@/lib/access/context";
-import {
-  accountingPeriod,
-  buildFinancialReadModel,
-  foundationAccountName,
-  getAccountingIntegrity,
-  getTrialBalance,
-  listJournalSummaries,
-  listLedgerLines,
-} from "@/lib/d1/accounting";
+import { accountingPeriod,buildFinancialReadModel,foundationAccountName,getAccountingIntegrity,getTrialBalance,listJournalSummaries,listLedgerLines } from "@/lib/d1/accounting";
 import { listAccounts } from "@/lib/d1/accounting-config";
 import { getD1SchemaStatus } from "@/lib/d1/context";
 import { listTreasuryAccounts } from "@/lib/d1/treasury";
 import styles from "./finance.module.css";
 
-export const dynamic = "force-dynamic";
+export const dynamic="force-dynamic";
+type PageProps={searchParams:Promise<{from?:string;to?:string;account?:string}>};
+function wibToday(){const shifted=new Date(Date.now()+7*60*60*1000);return shifted.toISOString().slice(0,10)}
+function monthStart(date:string){return `${date.slice(0,7)}-01`}
+function rupiah(value:number){return new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(value)}
+function dateTime(value:string|null){if(!value)return"—";return new Date(value).toLocaleString("id-ID",{timeZone:"Asia/Jakarta",dateStyle:"short",timeStyle:"short"})}
 
-type PageProps = {
-  searchParams: Promise<{ from?: string; to?: string; account?: string }>;
-};
+export default async function FinancePage({searchParams}:PageProps){
+ const access=await getAccessContext();if(!access)redirect("/login");if(!access.permissions.includes("FINANCE_VIEW"))redirect("/dashboard");
+ const schema=await getD1SchemaStatus();if(!schema.initialized)redirect("/setup/database");
+ const params=await searchParams;const today=wibToday();const from=params.from||monthStart(today);const to=params.to||today;let period;try{period=accountingPeriod(from,to)}catch{period=accountingPeriod(monthStart(today),today)}
+ const account=params.account?.trim()||null;const accountingConfigReady=schema.features.accountingConfig;const accountingRuntimeReady=schema.features.accountingRuntime;const procurementAccountingReady=schema.features.procurementAccounting;const treasuryReady=schema.features.treasuryPeriod;
+ const [trialBalance,integrity,journals,ledger,accounts,treasuryAccounts]=await Promise.all([getTrialBalance(access.organization.id,period),getAccountingIntegrity(access.organization.id,period),listJournalSummaries(access.organization.id,period,120),listLedgerLines(access.organization.id,period,account,300),accountingConfigReady?listAccounts(access.organization.id):Promise.resolve([]),treasuryReady?listTreasuryAccounts(access.organization.id):Promise.resolve([])]);
+ const accountNames=new Map(accounts.map((item)=>[item.code,item.name]));const accountName=(code:string)=>accountNames.get(code)||foundationAccountName(code);const model=buildFinancialReadModel(trialBalance);const totalTrialDebit=trialBalance.reduce((sum,row)=>sum+row.debit_amount,0);const totalTrialCredit=trialBalance.reduce((sum,row)=>sum+row.credit_amount,0);const canConfigure=access.permissions.includes("ACCOUNTING_MANAGE")||access.permissions.includes("ACCOUNTING_APPROVE");
+ const treasuryCash=treasuryReady?treasuryAccounts.filter((row)=>row.status==="ACTIVE"&&row.account_type==="CASH").reduce((sum,row)=>sum+row.balance_amount,0):model.cash;const treasuryBank=treasuryReady?treasuryAccounts.filter((row)=>row.status==="ACTIVE"&&row.account_type==="BANK").reduce((sum,row)=>sum+row.balance_amount,0):model.bank;
 
-function wibToday() {
-  const shifted = new Date(Date.now() + 7 * 60 * 60 * 1000);
-  return shifted.toISOString().slice(0, 10);
-}
+ return <PageContainer size="full">
+  <PageHeader eyebrow="Keuangan" title="Keuangan & Buku Besar" description="Mulai dari posisi kas, laba-rugi, dan integritas. Detail ledger dibuka hanya saat diperlukan." actions={<div className={styles.financeActions}>{treasuryReady?<Link href="/finance/treasury">Kas & Bank</Link>:null}<Link href="/finance/journals">Jurnal</Link><Link href="/finance/assets">Aset</Link><Link href="/finance/closing-readiness">Tutup Buku</Link>{accountingConfigReady&&canConfigure?<Link href="/finance/settings">Pengaturan</Link>:null}</div>}/>
+  {!procurementAccountingReady?<Alert tone="warning" title="Procurement accounting belum aktif">Laporan jurnal lama tetap dapat dibaca, tetapi receiving, invoice, dan AP terbaru membutuhkan upgrade D1. <Link href="/setup/database">Buka Database Setup →</Link></Alert>:null}
+  {procurementAccountingReady&&!accountingConfigReady?<Alert tone="warning" title="Konfigurasi COA belum lengkap">Accounting read model aktif, tetapi configurable COA/mapping v5 belum diterapkan. <Link href="/setup/database">Apply accounting_config_v5 →</Link></Alert>:null}
+  {accountingConfigReady&&!accountingRuntimeReady?<Alert tone="warning" title="Runtime mapping belum aktif">COA/mapping v5 tersedia, tetapi runtime mapping v6 belum aktif. <Link href="/setup/database">Apply accounting_runtime_v6 →</Link></Alert>:null}
+  {accountingRuntimeReady&&!treasuryReady?<Alert tone="warning" title="Kas & Bank belum aktif">Runtime accounting aktif, tetapi Treasury & Period Control v7 belum diterapkan. <Link href="/setup/database">Apply treasury_period_v7 →</Link></Alert>:null}
 
-function monthStart(date: string) {
-  return `${date.slice(0, 7)}-01`;
-}
+  <Card className={styles.filterPanel}><form method="get" className={styles.filterForm}><label>Dari<input type="date" name="from" defaultValue={period.from}/></label><label>Sampai<input type="date" name="to" defaultValue={period.to}/></label>{account?<input type="hidden" name="account" value={account}/>:null}<button type="submit">Terapkan</button>{account?<Link href={`/finance?from=${period.from}&to=${period.to}`}>Hapus filter akun</Link>:null}</form><div className={styles.periodCopy}><span>Periode</span><strong>{period.from} → {period.to}</strong></div></Card>
 
-function rupiah(value: number) {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
+  <section className={styles.metrics}><Card density="compact"><span>Jurnal</span><strong>{integrity.entryCount}</strong><small>{integrity.lineCount} baris jurnal</small></Card><Card density="compact" className={integrity.passed?styles.goodMetric:styles.alertMetric}><span>Integritas</span><strong>{integrity.passed?"PASS":"CHECK"}</strong><small>{integrity.exceptions.length} exception</small></Card><Card density="compact"><span>Kas + Bank</span><strong>{rupiah(treasuryCash+treasuryBank)}</strong><small>Kas {rupiah(treasuryCash)} · Bank {rupiah(treasuryBank)}</small></Card><Card density="compact"><span>Laba / Rugi</span><strong>{rupiah(model.netIncome)}</strong><small>Pendapatan − Beban</small></Card></section>
 
-function dateTime(value: string | null) {
-  if (!value) return "—";
-  return new Date(value).toLocaleString("id-ID", {
-    timeZone: "Asia/Jakarta",
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
+  <section className={styles.twoColumn}>
+   <Card className={styles.panel}><div className={styles.panelHeader}><div><span className={styles.kicker}>Laba · Rugi</span><h3>Kinerja periode</h3></div><Badge tone="info">Read model</Badge></div><div className={styles.statementRows}><div><span>Pendapatan</span><strong>{rupiah(model.revenue)}</strong></div><div><span>Beban / HPP</span><strong>{rupiah(model.expenses)}</strong></div><div className={styles.statementTotal}><span>Laba / (Rugi) berjalan</span><strong>{rupiah(model.netIncome)}</strong></div></div></Card>
+   <Card className={styles.panel}><div className={styles.panelHeader}><div><span className={styles.kicker}>Neraca</span><h3>Persamaan akuntansi</h3></div><Badge tone={model.equationGap===0?"success":"warning"}>{model.equationGap===0?"Balanced":"Check"}</Badge></div><div className={styles.statementRows}><div><span>Aset</span><strong>{rupiah(model.assets)}</strong></div><div><span>Kewajiban</span><strong>{rupiah(model.liabilities)}</strong></div><div><span>Ekuitas</span><strong>{rupiah(model.equity)}</strong></div><div><span>Laba berjalan</span><strong>{rupiah(model.netIncome)}</strong></div><div className={styles.statementTotal}><span>Equation gap</span><strong>{rupiah(model.equationGap)}</strong></div></div><p className={styles.note}>Gap ditampilkan apa adanya agar opening balance dan koreksi terkontrol tetap terlihat.</p></Card>
+  </section>
 
-export default async function FinancePage({ searchParams }: PageProps) {
-  const access = await getAccessContext();
-  if (!access) redirect("/login");
-  if (!access.permissions.includes("FINANCE_VIEW")) redirect("/dashboard");
+  <section className={styles.metricsSecondary}><Card density="compact"><span>Persediaan</span><strong>{rupiah(model.inventory)}</strong></Card><Card density="compact"><span>Hutang Supplier</span><strong>{rupiah(model.accountsPayable)}</strong></Card><Card density="compact"><span>GRNI</span><strong>{rupiah(model.grni)}</strong></Card><Card density="compact"><span>Total Dr / Cr</span><strong>{rupiah(integrity.totalDebit)}</strong><small>Cr {rupiah(integrity.totalCredit)}</small></Card></section>
 
-  const schema = await getD1SchemaStatus();
-  if (!schema.initialized) redirect("/setup/database");
+  <details className={styles.dataDisclosure}><summary><span><strong>Neraca Saldo</strong><small>{trialBalance.length} akun · detail per akun</small></span><b>+</b></summary><div className={styles.dataBody}>{trialBalance.length?<div className={styles.tableWrap}><table><thead><tr><th>Akun</th><th>Debit</th><th>Kredit</th><th>Saldo D−K</th><th></th></tr></thead><tbody>{trialBalance.map((row)=><tr key={row.account_code}><td><strong>{row.account_code}</strong><span>{accountName(row.account_code)}</span></td><td>{rupiah(row.debit_amount)}</td><td>{rupiah(row.credit_amount)}</td><td><strong>{rupiah(row.balance_amount)}</strong></td><td><Link href={`/finance?from=${period.from}&to=${period.to}&account=${encodeURIComponent(row.account_code)}`}>Ledger →</Link></td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{rupiah(totalTrialDebit)}</th><th>{rupiah(totalTrialCredit)}</th><th>{rupiah(totalTrialDebit-totalTrialCredit)}</th><th></th></tr></tfoot></table></div>:<div className={styles.empty}>Belum ada jurnal POSTED pada periode ini.</div>}</div></details>
 
-  const params = await searchParams;
-  const today = wibToday();
-  const from = params.from || monthStart(today);
-  const to = params.to || today;
-  let period;
-  try {
-    period = accountingPeriod(from, to);
-  } catch {
-    period = accountingPeriod(monthStart(today), today);
-  }
+  <details className={styles.dataDisclosure} open={Boolean(account)}><summary><span><strong>{account?`${account} · ${accountName(account)}`:"General Ledger"}</strong><small>{account?`${ledger.length} baris pada akun terpilih`:`${ledger.length} baris terbaru`}</small></span><b>+</b></summary><div className={styles.dataBody}>{ledger.length?<div className={styles.tableWrap}><table><thead><tr><th>Waktu / Jurnal</th><th>Akun</th><th>Sumber</th><th>Debit</th><th>Kredit</th><th>Memo</th></tr></thead><tbody>{ledger.map((line,index)=><tr key={`${line.journal_entry_id}-${line.account_code}-${index}`}><td><strong>{line.entry_number}</strong><span>{dateTime(line.posted_at||line.created_at)}</span></td><td><strong>{line.account_code}</strong><span>{accountName(line.account_code)}</span></td><td><strong>{line.source_type}</strong><span>{line.description}</span></td><td>{line.debit_amount?rupiah(line.debit_amount):"—"}</td><td>{line.credit_amount?rupiah(line.credit_amount):"—"}</td><td>{line.memo||"—"}</td></tr>)}</tbody></table></div>:<div className={styles.empty}>Tidak ada ledger line pada filter ini.</div>}</div></details>
 
-  const account = params.account?.trim() || null;
-  const accountingConfigReady = schema.features.accountingConfig;
-  const accountingRuntimeReady = schema.features.accountingRuntime;
-  const procurementAccountingReady = schema.features.procurementAccounting;
-  const treasuryReady = schema.features.treasuryPeriod;
+  <details className={styles.dataDisclosure}><summary><span><strong>Kontrol Jurnal</strong><small>{integrity.passed?"Seluruh jurnal seimbang":`${integrity.exceptions.length} exception perlu diperiksa`}</small></span><Badge tone={integrity.passed?"success":"warning"}>{integrity.passed?"PASS":"CHECK"}</Badge></summary><div className={styles.dataBody}>{!integrity.passed&&integrity.exceptions.length?<div className={styles.exceptionList}>{integrity.exceptions.map((journal)=><div key={journal.id}><strong>{journal.entry_number}</strong><span>{journal.source_type} · Dr {rupiah(journal.debit_amount)} · Cr {rupiah(journal.credit_amount)} · {journal.line_count} lines</span></div>)}</div>:<Alert tone="success">Seluruh jurnal POSTED pada periode ini seimbang dan mempunyai minimal dua journal lines.</Alert>}{journals.length?<div className={styles.tableWrap}><table><thead><tr><th>Journal</th><th>Source</th><th>Debit</th><th>Kredit</th><th>Status</th></tr></thead><tbody>{journals.map((journal)=><tr key={journal.id}><td><strong>{journal.entry_number}</strong><span>{dateTime(journal.posted_at||journal.created_at)} · {journal.description}</span></td><td><strong>{journal.source_type}</strong><span>{journal.source_id.slice(0,12)}</span></td><td>{rupiah(journal.debit_amount)}</td><td>{rupiah(journal.credit_amount)}</td><td><Badge tone={journal.balanced?"success":"warning"}>{journal.balanced?"Balanced":"Check"}</Badge></td></tr>)}</tbody></table></div>:null}</div></details>
 
-  const [trialBalance, integrity, journals, ledger, accounts, treasuryAccounts] = await Promise.all([
-    getTrialBalance(access.organization.id, period),
-    getAccountingIntegrity(access.organization.id, period),
-    listJournalSummaries(access.organization.id, period, 120),
-    listLedgerLines(access.organization.id, period, account, 300),
-    accountingConfigReady ? listAccounts(access.organization.id) : Promise.resolve([]),
-    treasuryReady ? listTreasuryAccounts(access.organization.id) : Promise.resolve([]),
-  ]);
-
-  const accountNames = new Map(accounts.map((item) => [item.code, item.name]));
-  const accountName = (code: string) => accountNames.get(code) || foundationAccountName(code);
-  const model = buildFinancialReadModel(trialBalance);
-  const totalTrialDebit = trialBalance.reduce((sum, row) => sum + row.debit_amount, 0);
-  const totalTrialCredit = trialBalance.reduce((sum, row) => sum + row.credit_amount, 0);
-  const canConfigure = access.permissions.includes("ACCOUNTING_MANAGE") || access.permissions.includes("ACCOUNTING_APPROVE");
-  const treasuryCash = treasuryReady
-    ? treasuryAccounts.filter((row) => row.status === "ACTIVE" && row.account_type === "CASH").reduce((sum, row) => sum + row.balance_amount, 0)
-    : model.cash;
-  const treasuryBank = treasuryReady
-    ? treasuryAccounts.filter((row) => row.status === "ACTIVE" && row.account_type === "BANK").reduce((sum, row) => sum + row.balance_amount, 0)
-    : model.bank;
-
-  return (
-    <PageContainer size="full">
-      <PageHeader
-        eyebrow="Keuangan · General Ledger"
-        title="Keuangan & Buku Besar"
-        description="Pantau neraca saldo, laba-rugi, posisi Kas/Bank, dan integritas jurnal POSTED dari satu ruang kontrol."
-        actions={
-          <div className={styles.filterForm}>
-            {treasuryReady ? <Link href="/finance/treasury">Kas & Bank</Link> : null}
-            <Link href="/finance/journals">Jurnal</Link>
-            <Link href="/finance/assets">Aset</Link>
-            <Link href="/finance/closing-readiness">Tutup Buku</Link>
-            {accountingConfigReady && canConfigure ? <Link href="/finance/settings">Pengaturan Akun</Link> : null}
-          </div>
-        }
-      />
-
-      {!procurementAccountingReady ? (
-        <Alert tone="warning" title="Procurement accounting belum aktif">
-          Laporan jurnal lama tetap dapat dibaca, tetapi receiving, invoice, dan AP terbaru membutuhkan upgrade D1. <Link href="/setup/database">Buka Database Setup →</Link>
-        </Alert>
-      ) : null}
-      {procurementAccountingReady && !accountingConfigReady ? (
-        <Alert tone="warning" title="Konfigurasi COA belum lengkap">
-          Accounting read model aktif, tetapi configurable COA/mapping v5 belum diterapkan. <Link href="/setup/database">Apply accounting_config_v5 →</Link>
-        </Alert>
-      ) : null}
-      {accountingConfigReady && !accountingRuntimeReady ? (
-        <Alert tone="warning" title="Runtime mapping belum aktif">
-          COA/mapping v5 tersedia, tetapi runtime mapping v6 belum aktif. <Link href="/setup/database">Apply accounting_runtime_v6 →</Link>
-        </Alert>
-      ) : null}
-      {accountingRuntimeReady && !treasuryReady ? (
-        <Alert tone="warning" title="Kas & Bank belum aktif">
-          Runtime accounting aktif, tetapi Treasury & Period Control v7 belum diterapkan. <Link href="/setup/database">Apply treasury_period_v7 →</Link>
-        </Alert>
-      ) : null}
-
-      <Card className={styles.filterPanel}>
-        <form method="get" className={styles.filterForm}>
-          <label>Dari<input type="date" name="from" defaultValue={period.from} /></label>
-          <label>Sampai<input type="date" name="to" defaultValue={period.to} /></label>
-          {account ? <input type="hidden" name="account" value={account} /> : null}
-          <button type="submit">Terapkan Periode</button>
-          {account ? <Link href={`/finance?from=${period.from}&to=${period.to}`}>Hapus filter akun</Link> : null}
-        </form>
-        <div className={styles.periodCopy}><span>Periode</span><strong>{period.from} → {period.to}</strong></div>
-      </Card>
-
-      <section className={styles.metrics}>
-        <Card density="compact"><span>Journal Entries</span><strong>{integrity.entryCount}</strong><small>{integrity.lineCount} journal lines</small></Card>
-        <Card density="compact" className={integrity.passed ? styles.goodMetric : styles.alertMetric}><span>Journal Integrity</span><strong>{integrity.passed ? "PASS" : "CHECK"}</strong><small>{integrity.exceptions.length} exception</small></Card>
-        <Card density="compact"><span>Kas + Bank</span><strong>{rupiah(treasuryCash + treasuryBank)}</strong><small>Kas {rupiah(treasuryCash)} · Bank {rupiah(treasuryBank)}</small></Card>
-        <Card density="compact"><span>Laba / Rugi</span><strong>{rupiah(model.netIncome)}</strong><small>Pendapatan − Beban</small></Card>
-      </section>
-
-      <section className={styles.twoColumn}>
-        <Card className={styles.panel}>
-          <div className={styles.panelHeader}><div><span className={styles.kicker}>LABA · RUGI</span><h3>Kinerja periode</h3></div><Badge tone="info">READ MODEL</Badge></div>
-          <div className={styles.statementRows}>
-            <div><span>Pendapatan</span><strong>{rupiah(model.revenue)}</strong></div>
-            <div><span>Beban / HPP</span><strong>{rupiah(model.expenses)}</strong></div>
-            <div className={styles.statementTotal}><span>Laba / (Rugi) berjalan</span><strong>{rupiah(model.netIncome)}</strong></div>
-          </div>
-        </Card>
-
-        <Card className={styles.panel}>
-          <div className={styles.panelHeader}><div><span className={styles.kicker}>NERACA</span><h3>Persamaan akuntansi</h3></div><Badge tone={model.equationGap === 0 ? "success" : "warning"}>{model.equationGap === 0 ? "BALANCED" : "CHECK"}</Badge></div>
-          <div className={styles.statementRows}>
-            <div><span>Aset</span><strong>{rupiah(model.assets)}</strong></div>
-            <div><span>Kewajiban</span><strong>{rupiah(model.liabilities)}</strong></div>
-            <div><span>Ekuitas tercatat</span><strong>{rupiah(model.equity)}</strong></div>
-            <div><span>Laba berjalan</span><strong>{rupiah(model.netIncome)}</strong></div>
-            <div className={styles.statementTotal}><span>Equation gap</span><strong>{rupiah(model.equationGap)}</strong></div>
-          </div>
-          <p className={styles.note}>Gap tetap ditampilkan apa adanya agar opening balance dan koreksi terkontrol tidak tertutup oleh presentasi.</p>
-        </Card>
-      </section>
-
-      <section className={styles.metricsSecondary}>
-        <Card density="compact"><span>Persediaan</span><strong>{rupiah(model.inventory)}</strong></Card>
-        <Card density="compact"><span>Hutang Supplier</span><strong>{rupiah(model.accountsPayable)}</strong></Card>
-        <Card density="compact"><span>GRNI</span><strong>{rupiah(model.grni)}</strong></Card>
-        <Card density="compact"><span>Total Dr / Cr</span><strong>{rupiah(integrity.totalDebit)}</strong><small>Cr {rupiah(integrity.totalCredit)}</small></Card>
-      </section>
-
-      <Card className={styles.panel}>
-        <div className={styles.panelHeader}><div><span className={styles.kicker}>NERACA SALDO</span><h3>Saldo per akun</h3></div><Badge>{trialBalance.length} akun</Badge></div>
-        {trialBalance.length ? (
-          <div className={styles.tableWrap}><table><thead><tr><th>Akun</th><th>Debit</th><th>Kredit</th><th>Saldo D−K</th><th></th></tr></thead><tbody>
-            {trialBalance.map((row) => <tr key={row.account_code}>
-              <td><strong>{row.account_code}</strong><span>{accountName(row.account_code)}</span></td>
-              <td>{rupiah(row.debit_amount)}</td><td>{rupiah(row.credit_amount)}</td><td><strong>{rupiah(row.balance_amount)}</strong></td>
-              <td><Link href={`/finance?from=${period.from}&to=${period.to}&account=${encodeURIComponent(row.account_code)}`}>Ledger →</Link></td>
-            </tr>)}
-          </tbody><tfoot><tr><th>Total</th><th>{rupiah(totalTrialDebit)}</th><th>{rupiah(totalTrialCredit)}</th><th>{rupiah(totalTrialDebit - totalTrialCredit)}</th><th></th></tr></tfoot></table></div>
-        ) : <div className={styles.empty}>Belum ada jurnal POSTED pada periode ini.</div>}
-      </Card>
-
-      <Card className={styles.panel}>
-        <div className={styles.panelHeader}><div><span className={styles.kicker}>GENERAL LEDGER</span><h3>{account ? `${account} · ${accountName(account)}` : "300 baris ledger terbaru"}</h3></div><Badge>{ledger.length} lines</Badge></div>
-        {ledger.length ? <div className={styles.tableWrap}><table><thead><tr><th>Waktu / Jurnal</th><th>Akun</th><th>Sumber</th><th>Debit</th><th>Kredit</th><th>Memo</th></tr></thead><tbody>{ledger.map((line, index) => <tr key={`${line.journal_entry_id}-${line.account_code}-${index}`}>
-          <td><strong>{line.entry_number}</strong><span>{dateTime(line.posted_at || line.created_at)}</span></td>
-          <td><strong>{line.account_code}</strong><span>{accountName(line.account_code)}</span></td>
-          <td><strong>{line.source_type}</strong><span>{line.description}</span></td>
-          <td>{line.debit_amount ? rupiah(line.debit_amount) : "—"}</td><td>{line.credit_amount ? rupiah(line.credit_amount) : "—"}</td><td>{line.memo || "—"}</td>
-        </tr>)}</tbody></table></div> : <div className={styles.empty}>Tidak ada ledger line pada filter ini.</div>}
-      </Card>
-
-      <Card className={styles.panel}>
-        <div className={styles.panelHeader}><div><span className={styles.kicker}>KONTROL JURNAL</span><h3>Journal entries & integrity</h3></div><Badge tone={integrity.passed ? "success" : "warning"}>{integrity.passed ? "PASS" : `${integrity.exceptions.length} EXCEPTION`}</Badge></div>
-        {!integrity.passed && integrity.exceptions.length
-          ? <div className={styles.exceptionList}>{integrity.exceptions.map((journal) => <div key={journal.id}><strong>{journal.entry_number}</strong><span>{journal.source_type} · Dr {rupiah(journal.debit_amount)} · Cr {rupiah(journal.credit_amount)} · {journal.line_count} lines</span></div>)}</div>
-          : <Alert tone="success">Seluruh jurnal POSTED pada periode ini seimbang dan mempunyai minimal dua journal lines.</Alert>}
-        {journals.length ? <div className={styles.tableWrap}><table><thead><tr><th>Journal</th><th>Source</th><th>Debit</th><th>Kredit</th><th>Status</th></tr></thead><tbody>{journals.map((journal) => <tr key={journal.id}>
-          <td><strong>{journal.entry_number}</strong><span>{dateTime(journal.posted_at || journal.created_at)} · {journal.description}</span></td>
-          <td><strong>{journal.source_type}</strong><span>{journal.source_id.slice(0, 12)}</span></td>
-          <td>{rupiah(journal.debit_amount)}</td><td>{rupiah(journal.credit_amount)}</td><td><Badge tone={journal.balanced ? "success" : "warning"}>{journal.balanced ? "BALANCED" : "CHECK"}</Badge></td>
-        </tr>)}</tbody></table></div> : null}
-      </Card>
-
-      <Alert tone="info" title="Accounting control">
-        {treasuryReady ? "Treasury register, bank reconciliation, dan database period guard sudah tersedia. " : accountingRuntimeReady ? "Runtime accounting mapping aktif. " : "Accounting foundation masih membutuhkan upgrade. "}
-        Jurnal historis tetap memakai account code yang diposting saat transaksi terjadi.
-      </Alert>
-    </PageContainer>
-  );
+  <Alert tone="info" title="Kontrol akuntansi">{treasuryReady?"Treasury register, bank reconciliation, dan database period guard tersedia. ":accountingRuntimeReady?"Runtime accounting mapping aktif. ":"Accounting foundation masih membutuhkan upgrade. "}Jurnal historis tetap memakai account code yang diposting saat transaksi terjadi.</Alert>
+ </PageContainer>;
 }
