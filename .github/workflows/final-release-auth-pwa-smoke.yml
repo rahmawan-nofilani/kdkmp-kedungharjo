@@ -37,7 +37,7 @@ jobs:
           python -m pip install --disable-pip-version-check 'playwright==1.55.0'
           python -m playwright install chromium
 
-      - name: Verify PWA surface, authenticated modules, and mobile logout
+      - name: Verify PWA, v1.3 mobile navigation, authenticated routes, and logout
         id: smoke
         shell: bash
         run: |
@@ -49,14 +49,21 @@ jobs:
           BASE=os.environ['UAT_BASE_URL'].rstrip('/')
           stage='public'; route=''; install_errors=[]
           routes=[
-            '/dashboard','/members','/inventory','/procurement','/finance',
-            '/savings/accounts','/loans/products','/loans/reports','/approvals','/readiness'
+            '/dashboard','/simpan-pinjam',
+            '/savings/accounts?intent=deposit','/savings/accounts?intent=withdraw',
+            '/pos','/teller','/members','/inventory','/procurement',
+            '/finance','/finance/treasury','/finance/journals','/finance/assets','/finance/closing-readiness',
+            '/loans/applications','/loans/contracts','/loans/repayments',
+            '/approvals','/reports/daily-sales','/readiness'
           ]
+
           def out(k,v):
               with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
                   f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
+
           def normalized(page):
               return re.sub(r'\s+',' ',page.locator('body').inner_text().replace('\u00a0',' '))
+
           def assert_healthy(page,path):
               text=normalized(page)
               bad=['This page couldn’t load','Application error','Internal Server Error','Runtime Error']
@@ -64,6 +71,13 @@ jobs:
                   if marker.lower() in text.lower(): raise RuntimeError(f'{path}: runtime error marker {marker}')
               if page.url.startswith(BASE+'/login') and path!='/login': raise RuntimeError(f'{path}: unexpectedly redirected to login')
               if not text.strip(): raise RuntimeError(f'{path}: empty page body')
+              overflow=page.evaluate('''() => ({
+                vw: window.innerWidth,
+                doc: document.documentElement.scrollWidth,
+                body: document.body.scrollWidth
+              })''')
+              if max(overflow['doc'],overflow['body']) > overflow['vw'] + 4:
+                  raise RuntimeError(f"{path}: root horizontal overflow {overflow} (internal table scrollers are allowed; page-level overflow is not)")
 
           with sync_playwright() as p:
               browser=p.chromium.launch(headless=True)
@@ -106,18 +120,55 @@ jobs:
                   page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
                   assert_healthy(page,'/dashboard')
 
+                  stage='mobile-bottom-nav'
+                  for label in ['Beranda','Transaksi','Simpan Pinjam','Laporan','Menu']:
+                      control=page.get_by_text(label,exact=True).last
+                      expect(control).to_be_visible()
+
+                  stage='transaction-launcher'
+                  page.get_by_role('button',name='Transaksi',exact=True).click()
+                  dialog=page.get_by_role('dialog',name='Pilih Transaksi')
+                  expect(dialog).to_be_visible()
+                  expect(dialog.get_by_text('POS / Penjualan',exact=True)).to_be_visible()
+                  dialog.get_by_role('button',name='Tutup').click()
+
+                  stage='domain-menu'
+                  page.get_by_role('button',name='Menu',exact=True).click()
+                  menu=page.get_by_role('dialog',name='Menu KopdesKu')
+                  expect(menu).to_be_visible()
+                  summary=menu.locator('summary').filter(has_text='Simpan Pinjam').first
+                  expect(summary).to_be_visible(); summary.click()
+                  expect(menu.get_by_text('Beranda Simpan Pinjam',exact=True)).to_be_visible()
+                  expect(menu.get_by_text('Setoran Masuk',exact=True)).to_be_visible()
+                  menu.get_by_role('button',name='Tutup').click()
+
                   stage='authenticated-routes'
                   for route in routes:
                       page.goto(BASE+route,wait_until='networkidle')
                       assert_healthy(page,route)
-                  page.screenshot(path='/tmp/kdkmp-final-smoke/authenticated-mobile.png',full_page=True)
+
+                  stage='pos-mobile-switcher'
+                  page.goto(BASE+'/pos',wait_until='networkidle')
+                  assert_healthy(page,'/pos')
+                  products=page.get_by_role('button',name='Produk',exact=True)
+                  cart=page.get_by_role('button',name=re.compile(r'^Keranjang'))
+                  expect(products).to_be_visible(); expect(cart).to_be_visible()
+                  cart.click(); expect(page.get_by_text('Transaksi baru',exact=True)).to_be_visible()
+                  products.click(); expect(page.get_by_text('Pilih barang',exact=True)).to_be_visible()
+
+                  page.goto(BASE+'/dashboard',wait_until='networkidle')
+                  page.screenshot(path='/tmp/kdkmp-final-smoke/dashboard-mobile.png',full_page=True)
+                  page.goto(BASE+'/simpan-pinjam',wait_until='networkidle')
+                  page.screenshot(path='/tmp/kdkmp-final-smoke/simpan-pinjam-mobile.png',full_page=True)
+                  page.goto(BASE+'/pos',wait_until='networkidle')
+                  page.screenshot(path='/tmp/kdkmp-final-smoke/pos-mobile.png',full_page=True)
 
                   stage='logout'
                   page.goto(BASE+'/dashboard',wait_until='networkidle')
-                  more=page.get_by_role('button',name='Lainnya',exact=True)
-                  expect(more).to_be_visible(); more.click()
-                  expect(page.get_by_text('Menu lainnya',exact=True)).to_be_visible()
-                  button=page.get_by_role('button',name='Keluar',exact=True)
+                  page.get_by_role('button',name='Menu',exact=True).click()
+                  menu=page.get_by_role('dialog',name='Menu KopdesKu')
+                  expect(menu).to_be_visible()
+                  button=menu.get_by_role('button',name='Keluar',exact=True)
                   expect(button).to_be_visible(); button.click()
                   page.wait_for_url(re.compile(r'.*/login(?:\?.*)?$'),timeout=20000)
                   expect(page.locator('input[type="email"]').first).to_be_visible()
@@ -141,7 +192,7 @@ jobs:
         env:
           INSTALL_ERRORS: ${{ steps.smoke.outputs.installability_errors }}
         run: |
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA release smoke PASS. Run \`$GITHUB_RUN_ID\`: production HTTPS manifest/start_url/standalone/icons loaded; Chromium manifest diagnostics had no parse errors; SUPER_ADMIN login passed on the final KopdesKu login UI; Dashboard, Members, Inventory, Procurement, Finance, Savings, Loans, Loan Reports, Approvals and Readiness loaded without runtime-error markers; mobile Lainnya → Akun → Keluar returned to /login and protected /dashboard redirected back to login. Chromium installability diagnostics: \`${INSTALL_ERRORS:-[]}\`. Physical OS/browser install-button interaction is device UI and is not fabricated by this headless check."
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA mobile smoke PASS. Run \`$GITHUB_RUN_ID\`: production HTTPS manifest/start_url/standalone/icons loaded; Chromium manifest diagnostics had no parse errors; SUPER_ADMIN login passed; 390x844 mobile bottom navigation, Transaksi launcher, domain-first Menu, Simpan Pinjam hierarchy, POS Produk↔Keranjang switcher, all certified routes, page-level horizontal-overflow guard, and Menu → Keluar session protection passed. Chromium installability diagnostics: \`${INSTALL_ERRORS:-[]}\`. Physical OS/browser install-button interaction remains device UI and is not fabricated by this headless check."
 
       - name: Record failure
         if: failure()
@@ -150,7 +201,7 @@ jobs:
           ROUTE: ${{ steps.smoke.outputs.failure_route }}
           INSTALL_ERRORS: ${{ steps.smoke.outputs.installability_errors }}
         run: |
-          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA release smoke did not PASS. Run \`$GITHUB_RUN_ID\`; stage \`${STAGE:-setup}\`; route \`${ROUTE:-none}\`; Chromium installability diagnostics \`${INSTALL_ERRORS:-[]}\`. Inspect final release gate before operational sign-off."
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Final authenticated/PWA mobile smoke did not PASS. Run \`$GITHUB_RUN_ID\`; stage \`${STAGE:-setup}\`; route \`${ROUTE:-none}\`; Chromium installability diagnostics \`${INSTALL_ERRORS:-[]}\`. Inspect v1.3 responsive/release gate before sign-off."
 
       - name: Upload screenshots
         if: always()
