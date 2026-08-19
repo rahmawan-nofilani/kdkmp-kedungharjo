@@ -1,0 +1,125 @@
+name: Loan Contract Continuation UAT
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  loan-contract-continuation:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-CONTRACT-CONTINUE' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 10
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+      APPLICATION_NUMBER: PIN-20260819-A983C941
+
+    steps:
+      - name: Guard credential
+        run: test -n "$UAT_ADMINUNIT_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Create contract and deterministic schedule
+        id: uat
+        run: |
+          mkdir -p /tmp/kdkmp-loan-contract
+          python <<'PY'
+          import os,re,traceback
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from playwright.sync_api import sync_playwright,expect
+
+          base=os.environ['UAT_BASE_URL'].rstrip('/')
+          app_no=os.environ['APPLICATION_NUMBER']
+          stage='login'; contract_no=''
+
+          def out(k,v):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:f.write(f'{k}={v}\n')
+          def choose_containing(select,needle):
+              opts=select.locator('option')
+              for i in range(opts.count()):
+                  opt=opts.nth(i); text=(opt.inner_text() or '').strip(); value=opt.get_attribute('value') or ''
+                  if value and needle in text:
+                      select.select_option(value=value); return text
+              raise RuntimeError(f'Approved application {needle} not available for contract creation')
+
+          with sync_playwright() as p:
+              b=p.chromium.launch(headless=True); page=b.new_page(); page.set_default_timeout(15000)
+              try:
+                  page.goto(base+'/login',wait_until='networkidle')
+                  page.get_by_label('Email',exact=True).fill(os.environ['UAT_ADMINUNIT_EMAIL'])
+                  page.get_by_label('Kata sandi',exact=True).fill(os.environ['UAT_ADMINUNIT_PASSWORD'])
+                  page.get_by_role('button',name='Masuk ke KDKMP').click()
+                  page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+
+                  stage='contracts-nav'
+                  link=page.locator('a[href="/loans/contracts"]').first; expect(link).to_be_visible(); link.click()
+                  page.wait_for_url(re.compile(r'.*/loans/contracts(?:\?.*)?$'),timeout=20000)
+                  expect(page.get_by_role('heading',name='Kontrak & Jadwal Angsuran')).to_be_visible()
+
+                  stage='contract-create'
+                  page.get_by_text('+ Bentuk Kontrak',exact=True).click()
+                  form=page.locator('form').filter(has=page.get_by_role('button',name='Bentuk Kontrak & Jadwal')).first
+                  expect(form).to_be_visible()
+                  choose_containing(form.locator('select[name="application_id"]'),app_no)
+                  form.locator('input[name="agreement_date"]').fill(datetime.now(ZoneInfo('Asia/Jakarta')).date().isoformat())
+                  form.get_by_role('button',name='Bentuk Kontrak & Jadwal').click()
+                  page.wait_for_url(re.compile(r'.*/loans/contracts/[^?]+\?status=created$'),timeout=20000)
+                  contract_no=page.locator('h1').inner_text().strip()
+                  if not contract_no: raise RuntimeError('Contract number empty')
+                  expect(page.get_by_text('SIAP DICAIRKAN',exact=True).first).to_be_visible(timeout=15000)
+                  rows=page.locator('table tbody tr').count()
+                  if rows != 6: raise RuntimeError(f'Expected exactly 6 schedule rows, got {rows}')
+                  page.screenshot(path='/tmp/kdkmp-loan-contract/pass.png',full_page=True)
+                  out('contract_number',contract_no);out('failure_stage','')
+                  print('Loan contract continuation PASS')
+              except Exception:
+                  out('contract_number',contract_no);out('failure_stage',stage)
+                  try: page.screenshot(path='/tmp/kdkmp-loan-contract/failure.png',full_page=True)
+                  except Exception: pass
+                  traceback.print_exc();raise
+              finally:b.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        env:
+          CONTRACT: ${{ steps.uat.outputs.contract_number }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan UAT contract continuation PASS. Run \`$GITHUB_RUN_ID\`. Existing approved application \`PIN-20260819-A983C941\` was used (no duplicate application/re-approval). ADMIN_UNIT created contract \`$CONTRACT\`, status READY/siap dicairkan, with exactly 6 deterministic installment schedule rows. No disbursement executed yet."
+
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          CONTRACT: ${{ steps.uat.outputs.contract_number }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan UAT contract continuation did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; contract \`${CONTRACT:-not-created}\`. Inspect Supabase before retry to avoid duplicate contract creation."
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-contract-continuation-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-contract/*.png
+          if-no-files-found: ignore
+          retention-days: 14
