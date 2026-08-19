@@ -98,7 +98,9 @@ jobs:
                   page.wait_for_url(re.compile(r'.*/loans/repayments/[^?]+\?status=posted$'),timeout=30000)
                   expect(page.get_by_text('POSTED',exact=True).first).to_be_visible(timeout=20000)
                   expect(page.get_by_text('CLOSED',exact=True).first).to_be_visible(timeout=20000)
-                  expect(page.get_by_text('Rp0',exact=False).first).to_be_visible(timeout=20000)
+                  normalized=re.sub(r'\s+',' ',page.locator('body').inner_text().replace('\u00a0',' '))
+                  if not re.search(r'Rp\s*0(?:\b|,)', normalized):
+                      raise RuntimeError('Zero outstanding indicator was not found after CLOSED settlement')
                   page.screenshot(path='/tmp/kdkmp-loan-settlement/pass.png',full_page=True)
                   out('failure_stage','');out('repayment_number',repayment_no);out('repayment_url',repayment_url);out('amount_text',amount_text);out('treasury_label',treasury_label);out('reference',reference)
                   print('Loan full settlement UAT PASS')
