@@ -43,7 +43,8 @@ Uji minimal SUPER_ADMIN, MANAGER, ADMIN_UNIT, TELLER, PENGURUS, dan PENGAWAS.
 - Pastikan transaksi yang melanggar status/permission diblok.
 
 ## Loan end-to-end
-- Buat/submit/approve produk pinjaman dummy.
+- Pastikan anggota dummy memenuhi prasyarat versi produk yang diuji. Untuk `F001`, baseline saat ini mensyaratkan saldo Savings minimal Rp100.000 dan guarantor; top up hanya melalui flow Savings resmi, bukan patch D1.
+- Buat/submit/approve produk pinjaman dummy bila memang menguji product lifecycle; untuk lifecycle transaksi dapat memakai versi produk ACTIVE/APPROVED yang sudah tersedia.
 - Buat application dan jalankan eligibility.
 - Checker approve application.
 - Buat contract dan schedule; pastikan snapshot produk immutable.
@@ -58,6 +59,8 @@ Uji minimal SUPER_ADMIN, MANAGER, ADMIN_UNIT, TELLER, PENGURUS, dan PENGAWAS.
 ## Finance & closing
 - Periksa Kas & Bank, journal registry, dan accounting mappings.
 - Pastikan draft/submitted journal yang belum selesai muncul sebagai blocker closing bila relevan.
+- Selesaikan bank reconciliation dan depreciation run yang memang menjadi blocker periode uji melalui UI resmi.
+- Rekonsiliasi/bersihkan teller shift sintetis yang disengaja secara terkontrol; jangan auto-close dari database.
 - Jalankan `/finance/closing-readiness` pada periode uji.
 - Jangan LOCK periode nyata hanya untuk UAT.
 
@@ -76,6 +79,20 @@ Setelah deployment Cloudflare yang sebenarnya:
 - Lakukan satu transaksi dummy kecil end-to-end dan reversal/cleanup yang sesuai.
 - Cek console/network error dan halaman 404/500.
 - Verifikasi environment variables dan D1 binding menunjuk environment yang dimaksud.
+
+## Authenticated Procurement/AP browser automation
+Workflow `.github/workflows/procurement-authenticated-uat.yml` menyediakan evidence browser terautentikasi untuk golden flow Procurement/AP tanpa menyimpan password di repository.
+
+Prerequisite pada GitHub Environment `production`:
+- `UAT_ADMINUNIT_PASSWORD` = password akun sintetis `uat.adminunit@example.com`
+- `UAT_SUPERADMIN_PASSWORD` = password akun sintetis `uat.superadmin@example.com`
+
+Password tidak boleh ditulis di issue, commit, log, atau chat. Workflow hanya dapat dipicu oleh pemilik repository pada Issue #42 dengan komentar persis:
+`UAT-KDKMP-PROCUREMENT`
+
+Workflow menggunakan konteks browser terpisah untuk ADMIN_UNIT maker dan SUPER_ADMIN checker serta menjalankan Supplier → PR → approval → PO → issue → receiving → AP invoice → 3-Way Match → approval → BANK_TRANSFER payment. Setiap run memakai identifier UAT unik dan mengunggah screenshot evidence.
+
+Hasil workflow ini adalah **authenticated automated browser evidence**, bukan pengganti otomatis untuk human visual sign-off. Setelah PASS, ambil fresh D1 backup dan verifikasi inventory movement, supplier AP/payment, journal, dan audit trail sebelum mengubah release gate.
 
 ## Release decision
 **GO** hanya jika:

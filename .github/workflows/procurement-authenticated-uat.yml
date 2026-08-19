@@ -1,0 +1,236 @@
+name: Procurement Authenticated UAT
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  procurement-browser-uat:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-PROCUREMENT' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 20
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard synthetic UAT credentials
+        shell: bash
+        run: |
+          test -n "$UAT_ADMINUNIT_PASSWORD" || { echo "Missing production secret UAT_ADMINUNIT_PASSWORD" >&2; exit 1; }
+          test -n "$UAT_SUPERADMIN_PASSWORD" || { echo "Missing production secret UAT_SUPERADMIN_PASSWORD" >&2; exit 1; }
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install --with-deps chromium
+
+      - name: Run authenticated Procurement/AP golden flow
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-uat
+          python <<'PY'
+          import os
+          import re
+          import traceback
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          from playwright.sync_api import sync_playwright, expect
+
+          BASE = os.environ['UAT_BASE_URL'].rstrip('/')
+          ADMIN_EMAIL = os.environ['UAT_ADMINUNIT_EMAIL']
+          ADMIN_PASSWORD = os.environ['UAT_ADMINUNIT_PASSWORD']
+          SUPER_EMAIL = os.environ['UAT_SUPERADMIN_EMAIL']
+          SUPER_PASSWORD = os.environ['UAT_SUPERADMIN_PASSWORD']
+          RUN_ID = os.environ['GITHUB_RUN_ID']
+          suffix = RUN_ID[-8:]
+          tag = f'UAT Procurement AP {RUN_ID}'
+          supplier_code = f'UATAP{suffix}'
+          supplier_name = f'Supplier UAT AP {suffix}'
+          invoice_number = f'UATINV{suffix}'
+          po_number = ''
+          pr_number = ''
+          po_url = ''
+
+          def login(browser, email, password):
+              context = browser.new_context()
+              page = context.new_page()
+              page.set_default_timeout(15000)
+              page.goto(f'{BASE}/login', wait_until='networkidle')
+              page.get_by_label('Email', exact=True).fill(email)
+              page.get_by_label('Kata sandi', exact=True).fill(password)
+              page.get_by_role('button', name='Masuk ke KDKMP').click()
+              page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'), timeout=20000)
+              return context, page
+
+          def write_output(name, value):
+              with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+                  f.write(f'{name}={value}\n')
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              active_page = None
+              try:
+                  # MAKER: supplier + PR
+                  maker_ctx, page = login(browser, ADMIN_EMAIL, ADMIN_PASSWORD)
+                  active_page = page
+                  page.goto(f'{BASE}/procurement', wait_until='networkidle')
+
+                  page.get_by_label('Kode', exact=True).fill(supplier_code)
+                  page.get_by_label('Nama', exact=True).fill(supplier_name)
+                  page.get_by_role('button', name='Simpan Supplier').click()
+                  page.wait_for_url(re.compile(r'.*/procurement\?status=supplier-created$'), timeout=20000)
+
+                  page.get_by_label('Supplier pilihan', exact=True).select_option(label=f'{supplier_code} · {supplier_name}')
+                  product_select = page.get_by_label('Produk', exact=True)
+                  product_select.select_option(index=1)
+                  page.get_by_label('Qty', exact=True).fill('1')
+                  page.get_by_label('Catatan kebutuhan', exact=True).fill(tag)
+                  page.get_by_role('button', name='Submit Purchase Request').click()
+                  page.wait_for_url(re.compile(r'.*/procurement\?status=pr-submitted$'), timeout=20000)
+
+                  row = page.locator('table tbody tr').filter(has_text=tag).first
+                  expect(row).to_be_visible()
+                  pr_number = row.locator('td').nth(0).locator('strong').inner_text().strip()
+                  if not pr_number:
+                      raise RuntimeError('Purchase Request number could not be captured.')
+                  maker_ctx.close()
+
+                  # CHECKER: approve PR + create/issue PO
+                  checker_ctx, page = login(browser, SUPER_EMAIL, SUPER_PASSWORD)
+                  active_page = page
+                  page.goto(f'{BASE}/procurement', wait_until='networkidle')
+                  approve_scope = page.locator('div').filter(has_text=pr_number).filter(
+                      has=page.get_by_role('button', name='Approve')
+                  ).first
+                  expect(approve_scope).to_be_visible()
+                  approve_scope.get_by_role('button', name='Approve').click()
+                  page.wait_for_url(re.compile(r'.*/procurement\?status=pr-approved$'), timeout=20000)
+
+                  po_form = page.locator('form').filter(has_text=pr_number).filter(
+                      has=page.get_by_role('button', name='Buat PO Draft')
+                  ).first
+                  expect(po_form).to_be_visible()
+                  po_form.get_by_role('button', name='Buat PO Draft').click()
+                  page.wait_for_url(re.compile(r'.*/procurement/po/[^?]+\?status=created$'), timeout=20000)
+                  po_url = page.url.split('?')[0]
+                  po_number = page.locator('h1').inner_text().strip()
+                  if not po_number:
+                      raise RuntimeError('Purchase Order number could not be captured.')
+
+                  page.get_by_role('button', name='Issue Purchase Order').click()
+                  page.wait_for_url(re.compile(r'.*/procurement/po/[^?]+\?status=issued$'), timeout=20000)
+                  checker_ctx.close()
+
+                  # MAKER: receive PO + enter supplier invoice
+                  maker_ctx, page = login(browser, ADMIN_EMAIL, ADMIN_PASSWORD)
+                  active_page = page
+                  page.goto(po_url, wait_until='networkidle')
+                  page.get_by_label('Gudang penerimaan', exact=True).select_option(index=1)
+                  page.get_by_label('Catatan receiving', exact=True).fill(tag)
+                  page.get_by_label('Terima', exact=True).fill('1')
+                  page.get_by_role('button', name='Posting Goods Receipt').click()
+                  page.wait_for_url(re.compile(r'.*/procurement/po/[^?]+\?status=received$'), timeout=20000)
+                  expect(page.get_by_role('link', name=re.compile('Buka Hutang Pemasok'))).to_be_visible()
+
+                  page.get_by_role('link', name=re.compile('Buka Hutang Pemasok')).click()
+                  page.wait_for_url(re.compile(r'.*/procurement/ap$'), timeout=20000)
+                  po_select = page.get_by_label('Purchase Order', exact=True)
+                  po_select.select_option(label=f'{po_number} · {supplier_name}')
+                  today = datetime.now(ZoneInfo('Asia/Jakarta')).date()
+                  page.get_by_label('Nomor invoice', exact=True).fill(invoice_number)
+                  page.get_by_label('Tanggal invoice', exact=True).fill(today.isoformat())
+                  page.get_by_label('Jatuh tempo', exact=True).fill((today + timedelta(days=7)).isoformat())
+                  page.get_by_role('button', name='Simpan Invoice Draft').click()
+                  page.wait_for_url(re.compile(r'.*/procurement/ap\?status=invoice-created$'), timeout=20000)
+                  maker_ctx.close()
+
+                  # CHECKER: 3-way match + approve + pay
+                  checker_ctx, page = login(browser, SUPER_EMAIL, SUPER_PASSWORD)
+                  active_page = page
+                  page.goto(f'{BASE}/procurement/ap', wait_until='networkidle')
+                  card = page.locator('article').filter(has_text=invoice_number).first
+                  expect(card).to_be_visible()
+                  card.get_by_role('button', name='Run 3-Way Match').click()
+                  page.wait_for_url(re.compile(r'.*/procurement/ap\?status=match-pass$'), timeout=20000)
+
+                  card = page.locator('article').filter(has_text=invoice_number).first
+                  expect(card).to_contain_text('MATCH')
+                  card.get_by_role('button', name='Approve Invoice').click()
+                  page.wait_for_url(re.compile(r'.*/procurement/ap\?status=invoice-approved$'), timeout=20000)
+
+                  card = page.locator('article').filter(has_text=invoice_number).first
+                  expect(card).to_be_visible()
+                  card.get_by_label('Metode', exact=True).select_option('BANK_TRANSFER')
+                  card.get_by_label('Referensi', exact=True).fill(f'UAT-{RUN_ID}')
+                  card.get_by_role('button', name='Posting Payment').click()
+                  page.wait_for_url(re.compile(r'.*/procurement/ap\?status=payment-posted$'), timeout=20000)
+
+                  card = page.locator('article').filter(has_text=invoice_number).first
+                  expect(card).to_be_visible()
+                  card_text = card.inner_text()
+                  if 'Sisa' not in card_text or not re.search(r'Sisa\s+Rp\s*0\b', card_text.replace('\u00a0', ' ')):
+                      raise RuntimeError(f'Invoice remaining amount is not zero after payment: {card_text}')
+                  if card.get_by_role('button', name='Posting Payment').count() != 0:
+                      raise RuntimeError('Payment action is still available after full payment.')
+
+                  page.screenshot(path='/tmp/kdkmp-uat/procurement-ap-pass.png', full_page=True)
+                  checker_ctx.close()
+
+                  write_output('tag', tag)
+                  write_output('supplier_code', supplier_code)
+                  write_output('pr_number', pr_number)
+                  write_output('po_number', po_number)
+                  write_output('invoice_number', invoice_number)
+                  print('Authenticated Procurement/AP browser flow PASS.')
+              except Exception:
+                  if active_page is not None:
+                      try:
+                          active_page.screenshot(path='/tmp/kdkmp-uat/procurement-ap-failure.png', full_page=True)
+                      except Exception:
+                          pass
+                  traceback.print_exc()
+                  raise
+              finally:
+                  browser.close()
+          PY
+
+      - name: Record authenticated browser UAT evidence
+        if: success()
+        shell: bash
+        env:
+          UAT_TAG: ${{ steps.uat.outputs.tag }}
+          UAT_SUPPLIER: ${{ steps.uat.outputs.supplier_code }}
+          UAT_PR: ${{ steps.uat.outputs.pr_number }}
+          UAT_PO: ${{ steps.uat.outputs.po_number }}
+          UAT_INVOICE: ${{ steps.uat.outputs.invoice_number }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Authenticated Procurement/AP browser automation PASS (synthetic data only; this is automated browser evidence, not a fabricated human visual sign-off). Run \`$GITHUB_RUN_ID\`. Tag: \`$UAT_TAG\`. Supplier: \`$UAT_SUPPLIER\`. PR: \`$UAT_PR\`. PO: \`$UAT_PO\`. Invoice: \`$UAT_INVOICE\`. Flow executed with distinct ADMIN_UNIT maker and SUPER_ADMIN checker: Supplier → PR → approval → PO → issue → receiving → inventory-linked handoff → invoice → 3-Way Match → approval → BANK_TRANSFER payment. Next: take a fresh D1 backup and verify inventory/AP/journal/audit evidence before changing the release gate."
+
+      - name: Upload UAT screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: procurement-authenticated-uat-${{ github.run_id }}
+          path: /tmp/kdkmp-uat/*.png
+          if-no-files-found: ignore
+          retention-days: 14

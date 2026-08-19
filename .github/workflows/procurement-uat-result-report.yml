@@ -1,0 +1,26 @@
+name: Procurement UAT Result Reporter
+
+on:
+  workflow_run:
+    workflows: ["Procurement Authenticated UAT"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  report-failure:
+    if: github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report failed authenticated UAT run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        shell: bash
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Authenticated Procurement/AP browser automation did not PASS. Conclusion: \`$CONCLUSION\`. Run: \`$RUN_ID\` — $RUN_URL. No human-UAT PASS is recorded. The run may have stopped at the credential guard or at a browser/business-flow assertion; inspect the run evidence before retrying."
