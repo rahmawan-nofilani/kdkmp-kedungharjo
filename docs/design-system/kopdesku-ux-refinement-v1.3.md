@@ -186,12 +186,14 @@ Global v1.3 adapter/shared UI rules also normalize remaining authenticated works
 
 ## Final candidate evidence
 
-PR `#63` final implementation candidate is based directly on the current `main` with `behind_by=0` at release preparation. Its final pre-release CI run `32245550956` passed:
+PR `#63` release implementation is based directly on the current `main` with `behind_by=0` at release preparation. Code-bearing final candidate `fdf31bedaaecc105b5357f356572914d405602ab` passed Application CI run `32245550956`:
 
 - Typecheck: PASS.
 - Next.js production build: PASS.
 - Cloudflare OpenNext build: PASS.
 - Wrangler production-shape dry run: PASS.
+
+Commits after that candidate only update this release record; the final PR head must also complete normal Application CI before merge.
 
 Changed-file audit contains presentation components, styles, documentation, and the release smoke workflow; no `actions.ts`, D1/accounting library, migration, or schema file is part of the v1.3 diff.
 
