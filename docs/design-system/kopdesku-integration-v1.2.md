@@ -1,51 +1,71 @@
 # KopdesKu Integration Pack v1.2 — FINAL IMPLEMENTED / DEPLOYED
 
-`KopdesKu_Integration_Pack_v1.2_FINAL.zip` supersedes v1.1 and remains the canonical brand/design foundation. `START_HERE.md` and `RESOLUTION_ADDENDUM_v1.2.md` resolved the former temporary-logo finding; approved production master assets are applied directly and must not be redrawn or geometrically reinterpreted.
+`KopdesKu_Integration_Pack_v1.2_FINAL.zip` superseded v1.1 and remains the canonical foundation for the approved KopdesKu brand identity, logo assets, colors, Poppins foundation, component semantics, and presentation safety boundary.
 
-## Prompt 1 — COMPLETE
+## Final implementation state
 
-- DS-0 repository mapping and business-logic boundary.
-- DS-1 canonical tokens, Poppins, light-default foundation, and production KopdesKu branding.
-- DS-2 shared core UI primitives and internal SVG icons.
-- DS-3 Deep Navy AppShell, permission-aware navigation, shared Topbar, PageHeader/PageContainer, and mobile navigation.
+- Prompt 1 / DS-0 through DS-3: COMPLETE.
+- Prompt 2 / all presentation migration batches: COMPLETE.
+- Original design migration PR #54: MERGED.
+- KopdesKu Web/PWA v1.2 production release: DEPLOYED and authenticated/PWA smoke PASS.
+- Procurement/AP, Savings, POS and Loan operational certification were completed separately from the presentation migration.
+- Finance operational blockers used during UAT were resolved through their official workflows; full August 1–31 month-end certification remains a separate calendar-bound accounting gate and must not be fabricated.
 
-## Prompt 2 — PRESENTATION MIGRATION COMPLETE
+## Implemented coverage
 
-- Landing/Login + Dashboard.
-- POS + Teller + Sales/Receipt.
-- Members + Inventory + Stock Opname + Procurement + PO/Receiving + Accounts Payable.
-- Finance + Accounting Settings + Treasury + Bank Reconciliation + Controlled Journals + Assets/Depreciation + Closing Readiness.
-- Savings Accounts/Products/Integrity Report + Approval Center.
-- Loan Products → Applications/Eligibility → Contracts/Schedule → Disbursements → Repayments → Penalties/Waiver → Corrections/Reversal/Full Settlement → Accounting/Reconciliation.
-- Release Readiness + Capacity + Backup/Recovery + Database Setup.
-- Final responsive/presentation QA.
+- Landing / Login / Dashboard.
+- AppShell / Sidebar / Topbar / mobile navigation.
+- POS / Teller / Sales receipt.
+- Members.
+- Inventory / stock movement / stock opname.
+- Procurement / supplier / PR / PO / receiving / AP.
+- Finance / Treasury / Journals / Assets / Closing Readiness.
+- Savings products / accounts / ledger / reports.
+- Loan products / applications / contracts / schedules / disbursements / repayments / penalties / waiver / corrections / settlement / reports.
+- Approval Center.
+- Readiness / Capacity / Backup & Recovery / Database Setup.
 
-## Final release evidence
+## Canonical assets that remain locked
 
-- PR #54 `Design: KopdesKu v1.2 — Prompt 1 + Prompt 2 migration` merged to `main`.
-- Final PR head CI `32235840634` PASS: Typecheck, Next.js production build, OpenNext Cloudflare build, Wrangler production-shape dry run.
-- Production application SHA `55a673a7eef41f10d276c260f8b16f0a3a741a78` deployed successfully.
-- Production deploy `32236222035` PASS.
-- Automated live verification PASS.
-- Final authenticated/PWA smoke `32236771665` PASS, including mobile `Lainnya → Akun → Keluar`, logout redirect, protected route redirect, manifest/icons, and Chromium installability diagnostics.
+The following v1.2 decisions remain source-of-truth and are **not replaced by later UX refinement work**:
 
-## Operational certification
-
-PASS with synthetic data:
-
-- POS CASH + controlled void.
-- Savings Track A.
-- Procurement/AP end-to-end.
-- Loan core lifecycle, reversal, settlement and reconciliation.
-- Separate non-zero penalty + maker-checker waiver fixture; F001 untouched.
-- Finance operational reconciliation through 19 Aug 2026; opening journal cleanup, legacy teller shift variance Rp0, and August depreciation posted.
-
-The remaining legitimate full-month August 1–31 closing certification is calendar-bound and is intentionally not fabricated before month end.
+- approved KopdesKu master logo geometry;
+- canonical brand color palette;
+- favicon / PWA / app identity assets;
+- Poppins as the product font family;
+- semantic status colors;
+- maker-checker and security presentation semantics;
+- minimum touch/accessibility principles.
 
 ## Safety boundary
 
-No intentional change to route contracts, RBAC business semantics, API/database contracts, Supabase/D1 schema, server-action behavior, transaction posting, idempotency, maker-checker, inventory/procurement/savings/loan/accounting business logic is part of the design-system migration.
+Design-system work must not intentionally change:
 
-## Successor refinement
+- route business contracts;
+- RBAC business semantics;
+- API/database contracts;
+- Supabase/D1 schemas;
+- server action behavior;
+- transaction posting;
+- idempotency;
+- maker-checker controls;
+- inventory/procurement/savings/loan/accounting business logic.
 
-`KopdesKu UX Refinement & Navigation Pack v1.3` inherits this v1.2 foundation. v1.3 may refine typography, density, navigation hierarchy, responsive presentation, and task access, but **must preserve approved logo geometry, brand colors, PWA identity, and existing transaction/business engines**.
+Business hotfixes from `main` remain authoritative and must be inherited unchanged by presentation work.
+
+## Relationship to v1.3
+
+`KopdesKu UX Refinement & Navigation Pack v1.3` is an additive usability layer on top of v1.2. It exists because the first full presentation migration revealed excessive typography weight/size, dense desktop-style mobile screens, and a flat information architecture.
+
+v1.3 therefore refines:
+
+- typography scale and weight;
+- operational density;
+- navigation hierarchy;
+- Simpan Pinjam task architecture;
+- transaction launcher;
+- responsive/mobile presentation;
+- progressive disclosure;
+- table-to-card mobile patterns.
+
+v1.3 **does not redraw the logo, recolor the brand, or replace transaction engines**. See `docs/design-system/kopdesku-ux-refinement-v1.3.md` for the current canonical usability layer.
