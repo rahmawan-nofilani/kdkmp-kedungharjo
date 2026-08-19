@@ -13,17 +13,7 @@
 
 ## Implemented coverage
 
-- Landing / Login / Dashboard.
-- AppShell / Sidebar / Topbar / mobile navigation.
-- POS / Teller / Sales receipt.
-- Members.
-- Inventory / stock movement / stock opname.
-- Procurement / supplier / PR / PO / receiving / AP.
-- Finance / Treasury / Journals / Assets / Closing Readiness.
-- Savings products / accounts / ledger / reports.
-- Loan products / applications / contracts / schedules / disbursements / repayments / penalties / waiver / corrections / settlement / reports.
-- Approval Center.
-- Readiness / Capacity / Backup & Recovery / Database Setup.
+Landing/Login/Dashboard, AppShell/navigation, POS/Teller/Sales, Members, Inventory, Procurement/AP, Finance/Treasury/Journals/Assets/Closing Readiness, Savings, Loans, Approval Center, Readiness, Capacity, Backup/Recovery, and Database Setup all received the v1.2 presentation foundation.
 
 ## Canonical assets that remain locked
 
@@ -39,33 +29,10 @@ The following v1.2 decisions remain source-of-truth and are **not replaced by la
 
 ## Safety boundary
 
-Design-system work must not intentionally change:
-
-- route business contracts;
-- RBAC business semantics;
-- API/database contracts;
-- Supabase/D1 schemas;
-- server action behavior;
-- transaction posting;
-- idempotency;
-- maker-checker controls;
-- inventory/procurement/savings/loan/accounting business logic.
-
-Business hotfixes from `main` remain authoritative and must be inherited unchanged by presentation work.
+Design-system work must not intentionally change route business contracts, RBAC business semantics, API/database contracts, Supabase/D1 schemas, server action behavior, transaction posting, idempotency, maker-checker controls, or inventory/procurement/savings/loan/accounting business logic. Business hotfixes from `main` remain authoritative.
 
 ## Relationship to v1.3
 
-`KopdesKu UX Refinement & Navigation Pack v1.3` is an additive usability layer on top of v1.2. It exists because the first full presentation migration revealed excessive typography weight/size, dense desktop-style mobile screens, and a flat information architecture.
+`KopdesKu UX Refinement & Navigation Pack v1.3` is an additive usability layer on top of v1.2. It refines typography scale/weight, operational density, navigation hierarchy, Simpan Pinjam task architecture, transaction launchers, responsive/mobile presentation, progressive disclosure, and mobile card patterns.
 
-v1.3 therefore refines:
-
-- typography scale and weight;
-- operational density;
-- navigation hierarchy;
-- Simpan Pinjam task architecture;
-- transaction launcher;
-- responsive/mobile presentation;
-- progressive disclosure;
-- table-to-card mobile patterns.
-
-v1.3 **does not redraw the logo, recolor the brand, or replace transaction engines**. See `docs/design-system/kopdesku-ux-refinement-v1.3.md` for the current canonical usability layer.
+v1.3 **does not redraw the logo, recolor the brand, or replace transaction engines**. See `docs/design-system/kopdesku-ux-refinement-v1.3.md` for the canonical usability layer.
