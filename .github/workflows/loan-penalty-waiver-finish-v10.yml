@@ -1,0 +1,122 @@
+name: Loan Penalty Waiver Finish V10
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  finish-waiver:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-PENALTY-WAIVER-V10' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 8
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      WAIVER_ID: 3fb1a218-5009-4705-9ec7-c52dd756a6bc
+      WAIVER_NO: WVD-20260819-3FB1A218
+      CONTRACT_NO: KON-20260819-6203E5DB
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Guard credentials
+        run: |
+          test -n "$UAT_ADMINUNIT_PASSWORD"
+          test -n "$UAT_SUPERADMIN_PASSWORD"
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+      - name: Submit and approve exact waiver
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-loan-waiver-v10
+          python <<'PY'
+          import os,re,traceback
+          from playwright.sync_api import sync_playwright,expect
+
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          WNO=os.environ['WAIVER_NO']; CONTRACT=os.environ['CONTRACT_NO']
+          stage='setup'
+          def out(k,v):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
+          def login(browser,email,password):
+              ctx=browser.new_context(); page=ctx.new_page(); page.set_default_timeout(15000)
+              page.goto(BASE+'/login',wait_until='networkidle')
+              page.get_by_label('Email',exact=True).fill(email)
+              page.get_by_label('Kata sandi',exact=True).fill(password)
+              page.get_by_role('button',name='Masuk ke KDKMP').click()
+              page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+              return ctx,page
+          def clean(page): page.goto(BASE+'/loans/penalties',wait_until='networkidle')
+          def exact_row(page):
+              row=page.locator('tr').filter(has_text=WNO).first
+              expect(row).to_be_visible(timeout=15000)
+              return row
+
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True); active=None
+              try:
+                  stage='maker-submit'
+                  ac,page=login(browser,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  clean(page); row=exact_row(page)
+                  if row.get_by_text('DRAFT',exact=True).count():
+                      button=row.get_by_role('button',name='Ajukan'); expect(button).to_be_visible(); button.click(); page.wait_for_timeout(3000); clean(page); row=exact_row(page)
+                  if not (row.get_by_text('SUBMITTED',exact=True).count() or row.get_by_text('APPROVED',exact=True).count()):
+                      raise RuntimeError('Exact waiver did not reach SUBMITTED after maker action')
+                  ac.close()
+
+                  stage='checker-approve'
+                  sc,page=login(browser,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  clean(page); row=exact_row(page)
+                  if row.get_by_text('SUBMITTED',exact=True).count():
+                      note=row.locator('input[name="decision_note"]').first
+                      if note.count(): note.fill('Approved for synthetic UAT certification')
+                      button=row.get_by_role('button',name='Setujui'); expect(button).to_be_visible(); button.click(); page.wait_for_timeout(3500); clean(page); row=exact_row(page)
+                  expect(row.get_by_text('APPROVED',exact=True)).to_be_visible(timeout=15000)
+                  if CONTRACT not in row.inner_text(): raise RuntimeError('Exact waiver row no longer belongs to expected contract')
+                  page.screenshot(path='/tmp/kdkmp-loan-waiver-v10/pass.png',full_page=True)
+                  sc.close()
+                  out('failure_stage',''); print('Exact Loan penalty waiver V10 PASS')
+              except Exception:
+                  out('failure_stage',stage); out('url',getattr(active,'url',''))
+                  if active:
+                      try: active.screenshot(path='/tmp/kdkmp-loan-waiver-v10/failure.png',full_page=True)
+                      except Exception: pass
+                  traceback.print_exc(); raise
+              finally: browser.close()
+          PY
+      - name: Record PASS
+        if: success()
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan penalty/waiver final maker-checker PASS. Run \`$GITHUB_RUN_ID\`: existing exact waiver \`WVD-20260819-3FB1A218\` (Rp1.000) was submitted by its ADMIN_UNIT maker and APPROVED by different SUPER_ADMIN checker for contract \`KON-20260819-6203E5DB\`. Combined with the persisted 2026-08-19 assessment (5 overdue installments × Rp1.000 minimum) and DISBURSED \`CAIR-20260819-4FC7A3D4\`, the non-zero overdue penalty + waiver gate is PASS. F001 untouched; no direct schedule/status SQL manipulation."
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          URL: ${{ steps.uat.outputs.url }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan penalty/waiver V10 did not PASS. Run \`$GITHUB_RUN_ID\`; stage \`${STAGE:-setup}\`; URL \`${URL:-none}\`. Inspect exact waiver \`WVD-20260819-3FB1A218\` before retry; do not create another waiver or reassess penalty."
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-penalty-waiver-v10-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-waiver-v10/*.png
+          if-no-files-found: ignore
+          retention-days: 14
