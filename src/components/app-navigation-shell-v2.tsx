@@ -37,9 +37,8 @@ const modules:NavModule[]=[
       {label:"Pencairan",href:"/loans/disbursements",permission:"LOAN_DISBURSEMENT_VIEW"},
       {label:"Angsuran Masuk",href:"/loans/repayments",permission:"LOAN_REPAYMENT_VIEW",icon:TransactionIcon},
       {label:"Denda & Keringanan",href:"/loans/penalties",permission:"LOAN_PENALTY_VIEW"},
-      {label:"Pelunasan / Koreksi",href:"/loans/corrections",anyPermissions:["LOAN_CORRECTION_VIEW","LOAN_REPAYMENT_POST"]},
+      {label:"Pelunasan & Koreksi",href:"/loans/corrections",anyPermissions:["LOAN_CORRECTION_VIEW","LOAN_REPAYMENT_POST"]},
     ]},
-    {label:"Laporan",items:[{label:"Laporan Pinjaman",href:"/loans/reports",permission:"LOAN_REPORT_VIEW",icon:ReportIcon}]},
     {label:"Pengaturan",items:[{label:"Produk Simpanan",href:"/savings/products",permission:"SAVINGS_PRODUCT_VIEW",badge:"Config"},{label:"Produk Pinjaman",href:"/loans/products",permission:"LOAN_PRODUCT_VIEW",badge:"Config"}]},
   ]},
   {label:"Operasional",icon:InventoryIcon,groups:[{items:[
@@ -87,7 +86,7 @@ function moduleItems(module:NavModule){return module.direct?[module.direct]:(mod
 
 export function AppNavigationShellV2({access,children}:{access:ShellAccess;children:ReactNode}){
   const pathname=usePathname(),router=useRouter();
-  const [pendingHref,setPendingHref]=useState<string|null>(null),[navigationPending,setNavigationPending]=useState(false),[menuOpen,setMenuOpen]=useState(false),[transactionOpen,setTransactionOpen]=useState(false),[openModules,setOpenModules]=useState<Set<string>>(()=>new Set(["Simpan Pinjam"]));
+  const [pendingHref,setPendingHref]=useState<string|null>(null),[navigationPending,setNavigationPending]=useState(false),[menuOpen,setMenuOpen]=useState(false),[transactionOpen,setTransactionOpen]=useState(false),[openModules,setOpenModules]=useState<Set<string>>(()=>new Set());
   const permissions=useMemo(()=>new Set(access.permissions),[access.permissions]);
   const visibleModules=useMemo(()=>modules.map(module=>{
     if(module.direct)return allowed(module.direct,permissions)?module:null;
@@ -103,13 +102,13 @@ export function AppNavigationShellV2({access,children}:{access:ShellAccess;child
   const simpanPinjamHref=simpanPinjamPermissions.some(code=>permissions.has(code))?"/simpan-pinjam":"/dashboard";
   const visibleTransactions=transactionActions.filter(item=>allowed(item,permissions));
 
-  useEffect(()=>{setPendingHref(null);setNavigationPending(false);setMenuOpen(false);setTransactionOpen(false);if(activeModule&&!activeModule.direct)setOpenModules(current=>{const next=new Set(current);next.add(activeModule.label);return next})},[pathname,activeModule?.label]);
+  useEffect(()=>{setPendingHref(null);setNavigationPending(false);setMenuOpen(false);setTransactionOpen(false);setOpenModules(activeModule&&!activeModule.direct?new Set([activeModule.label]):new Set())},[pathname,activeModule?.label]);
   useEffect(()=>{if(!navigationPending)return;const timer=window.setTimeout(()=>{setPendingHref(null);setNavigationPending(false)},8000);return()=>window.clearTimeout(timer)},[navigationPending]);
 
   function warmRoute(href:string){const base=baseHref(href);if(base!==pathname)router.prefetch(base)}
   function beginNavigation(href?:string){if(href&&baseHref(href)===pathname&&!href.includes("?"))return;if(href){setPendingHref(href);router.prefetch(baseHref(href))}setNavigationPending(true)}
   function back(){beginNavigation();if(window.history.length>1)router.back();else router.push("/dashboard")}
-  function toggleModule(label:string){setOpenModules(current=>{const next=new Set(current);if(next.has(label))next.delete(label);else next.add(label);return next})}
+  function toggleModule(label:string){setOpenModules(current=>current.has(label)?new Set():new Set([label]))}
   if(noShell.has(pathname))return <>{children}</>;
 
   const renderItem=(item:NavItem,compact=false)=>{const Icon=item.icon;const isPending=pendingHref===item.href;return <Link href={item.href} prefetch className={`${compact?"kdk-subnav-item":"nav-item"} ${displayedActiveHref===item.href||itemActive(pathname,item)?"active":""} ${isPending?"pending":""}`} key={item.href+item.label} onPointerEnter={()=>warmRoute(item.href)} onFocus={()=>warmRoute(item.href)} onClick={()=>beginNavigation(item.href)}>{Icon?<Icon size={compact?16:18}/>:compact?null:<span className="nav-icon-placeholder"/>}<span className="nav-label">{item.label}</span>{isPending?<small>Membuka…</small>:item.badge?<small>{item.badge}</small>:null}</Link>};
