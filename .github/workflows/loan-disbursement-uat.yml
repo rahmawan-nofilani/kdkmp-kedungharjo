@@ -1,0 +1,184 @@
+name: Loan Disbursement UAT
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  loan-disbursement-uat:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-DISBURSEMENT' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 12
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      UAT_SUPERADMIN_EMAIL: uat.superadmin@example.com
+      UAT_SUPERADMIN_PASSWORD: ${{ secrets.UAT_SUPERADMIN_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+      CONTRACT_NUMBER: KON-20260819-04F7F835
+      PRINCIPAL_AMOUNT: '1000000'
+
+    steps:
+      - name: Guard synthetic credentials
+        run: |
+          test -n "$UAT_ADMINUNIT_PASSWORD"
+          test -n "$UAT_SUPERADMIN_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Execute Loan disbursement golden flow
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-loan-disbursement
+          python <<'PY'
+          import os,re,traceback
+          from playwright.sync_api import sync_playwright, expect
+
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          CONTRACT=os.environ['CONTRACT_NUMBER']
+          PRINCIPAL=int(os.environ['PRINCIPAL_AMOUNT'])
+          RUN_ID=os.environ['GITHUB_RUN_ID']
+          stage='login-maker'; disbursement_no=''; disbursement_url=''; channel=''; treasury_label=''; reference=f'UAT-LOAN-{RUN_ID}'
+
+          def out(k,v):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+                  f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
+
+          def login(browser,email,password):
+              ctx=browser.new_context(); page=ctx.new_page(); page.set_default_timeout(15000)
+              page.goto(BASE+'/login',wait_until='networkidle')
+              page.get_by_label('Email',exact=True).fill(email)
+              page.get_by_label('Kata sandi',exact=True).fill(password)
+              page.get_by_role('button',name='Masuk ke KDKMP').click()
+              page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+              return ctx,page
+
+          def choose_contract(select):
+              opts=select.locator('option')
+              for i in range(opts.count()):
+                  opt=opts.nth(i); text=(opt.inner_text() or '').strip(); value=opt.get_attribute('value') or ''
+                  if value and CONTRACT in text:
+                      select.select_option(value=value); return
+              raise RuntimeError(f'READY contract {CONTRACT} is not available for disbursement')
+
+          def rupiah(text):
+              m=re.search(r'Rp\s*([0-9.]+)',text)
+              return int(re.sub(r'\D','',m.group(1))) if m else 0
+
+          def choose_treasury(select):
+              options=[]
+              opts=select.locator('option')
+              for i in range(opts.count()):
+                  opt=opts.nth(i); text=(opt.inner_text() or '').strip(); value=opt.get_attribute('value') or ''
+                  if value:
+                      options.append((value,text,rupiah(text)))
+              for wanted_type,wanted_channel in [('BANK','BANK_TRANSFER'),('CASH','CASH')]:
+                  for value,text,balance in options:
+                      if text.startswith(wanted_type+' ·') and balance >= PRINCIPAL:
+                          select.select_option(value=value)
+                          return wanted_channel,text
+              raise RuntimeError('No ACTIVE BANK/CASH treasury with displayed balance >= principal amount')
+
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True); active=None
+              try:
+                  maker,page=login(browser,os.environ['UAT_ADMINUNIT_EMAIL'],os.environ['UAT_ADMINUNIT_PASSWORD']); active=page
+                  stage='maker-create'
+                  page.goto(BASE+'/loans/disbursements',wait_until='networkidle')
+                  expect(page.get_by_role('heading',name='Pencairan Pinjaman')).to_be_visible()
+                  page.get_by_text('+ Buat Permintaan Pencairan',exact=True).click()
+                  form=page.locator('form').filter(has=page.get_by_role('button',name='Buat Draft Pencairan')).first
+                  expect(form).to_be_visible()
+                  choose_contract(form.locator('select[name="contract_id"]'))
+                  channel,treasury_label=choose_treasury(form.locator('select[name="treasury_account_id"]'))
+                  form.locator('select[name="channel"]').select_option(channel)
+                  form.locator('input[name="recipient_name"]').fill('Anggota Demo Dua')
+                  if channel=='BANK_TRANSFER':
+                      form.locator('input[name="bank_name"]').fill('Bank UAT')
+                      form.locator('input[name="bank_account_number"]').fill('990032220001')
+                  form.locator('input[name="request_note"]').fill(f'UAT Loan disbursement {RUN_ID}')
+                  form.get_by_role('button',name='Buat Draft Pencairan').click()
+                  page.wait_for_url(re.compile(r'.*/loans/disbursements/[^?]+\?status=created$'),timeout=20000)
+                  disbursement_url=page.url.split('?')[0]
+                  disbursement_no=page.locator('h1').inner_text().strip()
+                  if not disbursement_no: raise RuntimeError('Disbursement number empty after create')
+
+                  stage='maker-submit'
+                  page.get_by_role('button',name='Ajukan Pencairan').click()
+                  page.wait_for_url(re.compile(r'.*/loans/disbursements/[^?]+\?status=submitted$'),timeout=20000)
+                  expect(page.get_by_text('SUBMITTED',exact=True).first).to_be_visible()
+                  maker.close()
+
+                  checker,page=login(browser,os.environ['UAT_SUPERADMIN_EMAIL'],os.environ['UAT_SUPERADMIN_PASSWORD']); active=page
+                  stage='checker-approve'
+                  page.goto(disbursement_url,wait_until='networkidle')
+                  expect(page.get_by_text('SUBMITTED',exact=True).first).to_be_visible()
+                  page.get_by_role('button',name='Setujui Pencairan').click()
+                  page.wait_for_url(re.compile(r'.*/loans/disbursements/[^?]+\?status=approved$'),timeout=20000)
+                  expect(page.get_by_text('APPROVED',exact=True).first).to_be_visible()
+
+                  stage='execute'
+                  page.locator('input[name="execution_reference"]').fill(reference)
+                  page.get_by_role('button',name='Eksekusi Pencairan').click()
+                  page.wait_for_url(re.compile(r'.*/loans/disbursements/[^?]+\?status=disbursed$'),timeout=30000)
+                  expect(page.get_by_text('DISBURSED',exact=True).first).to_be_visible(timeout=20000)
+                  expect(page.get_by_text(CONTRACT,exact=False).first).to_be_visible()
+                  page.screenshot(path='/tmp/kdkmp-loan-disbursement/pass.png',full_page=True)
+                  checker.close()
+                  out('failure_stage',''); out('disbursement_number',disbursement_no); out('disbursement_url',disbursement_url); out('channel',channel); out('treasury_label',treasury_label); out('reference',reference)
+                  print('Loan disbursement UAT PASS')
+              except Exception:
+                  out('failure_stage',stage); out('disbursement_number',disbursement_no); out('disbursement_url',disbursement_url); out('channel',channel); out('treasury_label',treasury_label); out('reference',reference)
+                  if active is not None:
+                      try: active.screenshot(path='/tmp/kdkmp-loan-disbursement/failure.png',full_page=True)
+                      except Exception: pass
+                  traceback.print_exc(); raise
+              finally:
+                  browser.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        env:
+          DISBURSEMENT: ${{ steps.uat.outputs.disbursement_number }}
+          CHANNEL: ${{ steps.uat.outputs.channel }}
+          TREASURY: ${{ steps.uat.outputs.treasury_label }}
+          REFERENCE: ${{ steps.uat.outputs.reference }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan UAT disbursement PASS. Run \`$GITHUB_RUN_ID\`. Contract \`KON-20260819-04F7F835\` → disbursement \`$DISBURSEMENT\`, Rp1.000.000, channel \`$CHANNEL\`, treasury \`$TREASURY\`, execution reference \`$REFERENCE\`. Distinct ADMIN_UNIT maker and SUPER_ADMIN checker completed create → submit → approve → execute; final status DISBURSED. Next: fresh D1 evidence + repayment UAT."
+
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          DISBURSEMENT: ${{ steps.uat.outputs.disbursement_number }}
+          URL: ${{ steps.uat.outputs.disbursement_url }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan UAT disbursement did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; disbursement \`${DISBURSEMENT:-not-created}\`; URL \`${URL:-none}\`. Inspect current state before any retry to avoid duplicate disbursement/posting."
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-disbursement-uat-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-disbursement/*.png
+          if-no-files-found: ignore
+          retention-days: 14
