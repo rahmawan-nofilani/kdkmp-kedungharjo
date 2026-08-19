@@ -1,0 +1,139 @@
+name: Loan Full Settlement UAT
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  loan-full-settlement-uat:
+    if: >-
+      github.event.issue.number == 42 &&
+      github.event.comment.body == 'UAT-KDKMP-LOAN-FULL-SETTLEMENT' &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 10
+    env:
+      UAT_BASE_URL: https://kdkmp-kedungharjo.kdkmp-kedungharjo.workers.dev
+      UAT_ADMINUNIT_EMAIL: uat.adminunit@example.com
+      UAT_ADMINUNIT_PASSWORD: ${{ secrets.UAT_ADMINUNIT_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+      CONTRACT_NUMBER: KON-20260819-04F7F835
+
+    steps:
+      - name: Guard credential
+        run: test -n "$UAT_ADMINUNIT_PASSWORD"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          python -m playwright install chromium
+
+      - name: Execute full settlement
+        id: uat
+        shell: bash
+        run: |
+          mkdir -p /tmp/kdkmp-loan-settlement
+          python <<'PY'
+          import os,re,traceback
+          from playwright.sync_api import sync_playwright,expect
+
+          BASE=os.environ['UAT_BASE_URL'].rstrip('/')
+          CONTRACT=os.environ['CONTRACT_NUMBER']
+          RUN_ID=os.environ['GITHUB_RUN_ID']
+          reference=f'UAT-SETTLE-{RUN_ID}'
+          stage='login'; repayment_no=''; repayment_url=''; amount_text=''; treasury_label=''
+
+          def out(k,v):
+              with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+                  f.write(f'{k}={str(v).replace(chr(10)," ")}\n')
+
+          def choose_containing(select,needle):
+              opts=select.locator('option')
+              for i in range(opts.count()):
+                  opt=opts.nth(i); text=(opt.inner_text() or '').strip(); value=opt.get_attribute('value') or ''
+                  if value and needle in text:
+                      select.select_option(value=value); return text
+              raise RuntimeError(f'Option containing {needle} not found')
+
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True); page=browser.new_page(); page.set_default_timeout(15000)
+              try:
+                  page.goto(BASE+'/login',wait_until='networkidle')
+                  page.get_by_label('Email',exact=True).fill(os.environ['UAT_ADMINUNIT_EMAIL'])
+                  page.get_by_label('Kata sandi',exact=True).fill(os.environ['UAT_ADMINUNIT_PASSWORD'])
+                  page.get_by_role('button',name='Masuk ke KDKMP').click()
+                  page.wait_for_url(re.compile(r'.*/dashboard(?:\?.*)?$'),timeout=20000)
+
+                  stage='create-settlement'
+                  page.goto(BASE+'/loans/corrections',wait_until='networkidle')
+                  expect(page.get_by_role('heading',name='Koreksi & Pelunasan')).to_be_visible()
+                  form=page.locator('form').filter(has=page.get_by_role('button',name='Buat Draft Pelunasan')).first
+                  expect(form).to_be_visible()
+                  choose_containing(form.locator('select[name="contract_id"]'),CONTRACT)
+                  form.locator('select[name="channel"]').select_option('CASH')
+                  treasury_label=choose_containing(form.locator('select[name="treasury_account_id"]'),'CASH ·')
+                  form.locator('input[name="reference"]').fill(reference)
+                  form.locator('input[name="note"]').fill(f'UAT full settlement {RUN_ID}')
+                  form.get_by_role('button',name='Buat Draft Pelunasan').click()
+                  page.wait_for_url(re.compile(r'.*/loans/repayments/[^?]+\?status=settlement-created$'),timeout=25000)
+                  repayment_url=page.url.split('?')[0]
+                  repayment_no=page.locator('h1').inner_text().strip()
+                  if not repayment_no: raise RuntimeError('Settlement repayment number empty')
+                  expect(page.get_by_text('DRAFT',exact=True).first).to_be_visible()
+                  amount_text=page.locator('div').filter(has_text='PEMBAYARAN').locator('strong').first.inner_text().strip()
+                  expect(page.get_by_text('FULL_SETTLEMENT_NO_REBATE',exact=False).first).to_be_visible()
+
+                  stage='post-settlement'
+                  page.get_by_role('button',name='Post Pembayaran').click()
+                  page.wait_for_url(re.compile(r'.*/loans/repayments/[^?]+\?status=posted$'),timeout=30000)
+                  expect(page.get_by_text('POSTED',exact=True).first).to_be_visible(timeout=20000)
+                  expect(page.get_by_text('CLOSED',exact=True).first).to_be_visible(timeout=20000)
+                  expect(page.get_by_text('Rp0',exact=False).first).to_be_visible(timeout=20000)
+                  page.screenshot(path='/tmp/kdkmp-loan-settlement/pass.png',full_page=True)
+                  out('failure_stage','');out('repayment_number',repayment_no);out('repayment_url',repayment_url);out('amount_text',amount_text);out('treasury_label',treasury_label);out('reference',reference)
+                  print('Loan full settlement UAT PASS')
+              except Exception:
+                  out('failure_stage',stage);out('repayment_number',repayment_no);out('repayment_url',repayment_url);out('amount_text',amount_text);out('treasury_label',treasury_label);out('reference',reference)
+                  try: page.screenshot(path='/tmp/kdkmp-loan-settlement/failure.png',full_page=True)
+                  except Exception: pass
+                  traceback.print_exc();raise
+              finally: browser.close()
+          PY
+
+      - name: Record PASS
+        if: success()
+        env:
+          REPAYMENT: ${{ steps.uat.outputs.repayment_number }}
+          AMOUNT: ${{ steps.uat.outputs.amount_text }}
+          TREASURY: ${{ steps.uat.outputs.treasury_label }}
+          REFERENCE: ${{ steps.uat.outputs.reference }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan full-settlement UAT PASS. Run \`$GITHUB_RUN_ID\`. Contract \`KON-20260819-04F7F835\` → settlement repayment \`$REPAYMENT\`, server-calculated amount \`$AMOUNT\`, CASH via \`$TREASURY\`, reference \`$REFERENCE\`. Policy FULL_SETTLEMENT_NO_REBATE was present, payment posted through normal D1 accounting path, repayment final status POSTED, contract final status CLOSED, outstanding displayed Rp0. Next: fresh D1 backup + Supabase/D1 reconciliation report."
+
+      - name: Record failure
+        if: failure()
+        env:
+          STAGE: ${{ steps.uat.outputs.failure_stage }}
+          REPAYMENT: ${{ steps.uat.outputs.repayment_number }}
+          URL: ${{ steps.uat.outputs.repayment_url }}
+        run: |
+          gh issue comment 42 --repo "$GITHUB_REPOSITORY" --body "Loan full-settlement UAT did not PASS. Run \`$GITHUB_RUN_ID\`. Stage \`${STAGE:-setup}\`; repayment \`${REPAYMENT:-not-created}\`; URL \`${URL:-none}\`. Inspect current repayment/contract state before retry to avoid duplicate settlement."
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loan-full-settlement-${{ github.run_id }}
+          path: /tmp/kdkmp-loan-settlement/*.png
+          if-no-files-found: ignore
+          retention-days: 14
