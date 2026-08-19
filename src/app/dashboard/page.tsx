@@ -26,48 +26,49 @@ const quickActions=[
 ] as const;
 
 export default async function DashboardPage() {
-  const access = await getAccessContext();
-  if (!access) redirect("/login");
-  const firstName = access.profile.fullName.trim().split(/\s+/)[0] || "Pengguna";
-  const permissions = new Set(access.permissions);
-  const capabilities = capabilityMap.filter((item) => permissions.has(item.permission));
+  const access=await getAccessContext();
+  if(!access) redirect("/login");
+  const firstName=access.profile.fullName.trim().split(/\s+/)[0]||"Pengguna";
+  const permissions=new Set(access.permissions);
+  const capabilities=capabilityMap.filter((item)=>permissions.has(item.permission));
   const actions=quickActions.filter(item=>permissions.has(item.permission));
-  const visiblePermissions = access.permissions.slice(0, 10);
+  const visiblePermissions=access.permissions.slice(0,10);
 
-  return (
-    <main className={styles.page}>
-      <PageContainer size="wide">
-        <PageHeader
-          eyebrow={access.organization.name}
-          title={`Selamat datang, ${firstName}`}
-          description="Pilih pekerjaan yang ingin dilakukan. Menu dan aksi ditampilkan sesuai hak akses akun Anda."
-        />
+  const accountContext=<>
+    <section className={styles.summaryGrid} aria-label="Konteks akun">
+      <Card density="compact"><span className={styles.metricLabel}>Role</span><strong className={styles.metricValue}>{access.role.name}</strong><small className={styles.metricMeta}>{access.permissions.length} hak akses aktif</small></Card>
+      <Card density="compact"><span className={styles.metricLabel}>Unit kerja</span><strong className={styles.metricValue}>{access.units.length||1}</strong><small className={styles.metricMeta}>{access.units.map((unit)=>unit.name).join(", ")||"Scope organisasi"}</small></Card>
+      <Card density="compact"><span className={styles.metricLabel}>Organisasi</span><strong className={styles.metricValue}>{access.organization.code}</strong><small className={styles.metricMeta}>{access.organization.name}</small></Card>
+      <Card density="compact"><span className={styles.metricLabel}>Status akun</span><strong className={styles.metricValue}>{access.profile.status}</strong><small className={styles.metricMeta}>{access.user.email}</small></Card>
+    </section>
+    <Card className={styles.accessCard}>
+      <CardHeader title="Konteks akses" description="Informasi teknis untuk pemeriksaan role dan permission akun." />
+      <div className={styles.permissionCloud} aria-label="Permission aktif">
+        {visiblePermissions.map((permission)=><span className={styles.permissionItem} key={permission}>{permission}</span>)}
+        {access.permissions.length>visiblePermissions.length?<span className={styles.permissionMore}>+{access.permissions.length-visiblePermissions.length} lainnya</span>:null}
+      </div>
+    </Card>
+  </>;
 
-        {actions.length?<section className={styles.quickSection}>
-          <div className={styles.sectionHead}><span>AKSI CEPAT</span><h2>Pekerjaan harian</h2></div>
-          <div className={styles.quickGrid}>{actions.map(action=><Link className={`${styles.quickAction} ${styles[action.tone]}`} href={action.href} key={action.label}><span className={styles.quickIcon}>→</span><strong>{action.label}</strong><small>{action.description}</small></Link>)}</div>
-        </section>:null}
+  return <main className={styles.page}>
+    <PageContainer size="wide">
+      <PageHeader eyebrow={access.organization.name} title={`Selamat datang, ${firstName}`} description="Pilih pekerjaan yang ingin dilakukan. Menu dan aksi ditampilkan sesuai hak akses akun Anda."/>
 
-        <section className={styles.moduleSection}>
-          <div className={styles.sectionHead}><span>RUANG KERJA</span><h2>Modul yang tersedia</h2></div>
-          <div className={styles.moduleGrid}>{capabilities.map(item=><Link href={item.href} className={styles.moduleCard} key={item.title}><strong>{item.title}</strong><span>{item.description}</span><b>Buka →</b></Link>)}</div>
-        </section>
+      {actions.length?<section className={styles.quickSection}>
+        <div className={styles.sectionHead}><span>AKSI CEPAT</span><h2>Pekerjaan harian</h2></div>
+        <div className={styles.quickGrid}>{actions.map(action=><Link className={`${styles.quickAction} ${styles[action.tone]}`} href={action.href} key={action.label}><span className={styles.quickIcon}>→</span><strong>{action.label}</strong><small>{action.description}</small></Link>)}</div>
+      </section>:null}
 
-        <section className={styles.summaryGrid} aria-label="Konteks akun">
-          <Card density="compact"><span className={styles.metricLabel}>Role</span><strong className={styles.metricValue}>{access.role.name}</strong><small className={styles.metricMeta}>{access.permissions.length} hak akses aktif</small></Card>
-          <Card density="compact"><span className={styles.metricLabel}>Unit kerja</span><strong className={styles.metricValue}>{access.units.length||1}</strong><small className={styles.metricMeta}>{access.units.map((unit) => unit.name).join(", ") || "Scope organisasi"}</small></Card>
-          <Card density="compact"><span className={styles.metricLabel}>Organisasi</span><strong className={styles.metricValue}>{access.organization.code}</strong><small className={styles.metricMeta}>{access.organization.name}</small></Card>
-          <Card density="compact"><span className={styles.metricLabel}>Status akun</span><strong className={styles.metricValue}>{access.profile.status}</strong><small className={styles.metricMeta}>{access.user.email}</small></Card>
-        </section>
+      <section className={styles.moduleSection}>
+        <div className={styles.sectionHead}><span>RUANG KERJA</span><h2>Modul yang tersedia</h2></div>
+        <div className={styles.moduleGrid}>{capabilities.map(item=><Link href={item.href} className={styles.moduleCard} key={item.title}><strong>{item.title}</strong><span>{item.description}</span><b>Buka →</b></Link>)}</div>
+      </section>
 
-        <Card className={styles.accessCard}>
-          <CardHeader title="Konteks akses" description="Informasi teknis dipindahkan ke bagian sekunder agar tidak mengganggu pekerjaan harian." />
-          <div className={styles.permissionCloud} aria-label="Permission aktif">
-            {visiblePermissions.map((permission) => <span className={styles.permissionItem} key={permission}>{permission}</span>)}
-            {access.permissions.length > visiblePermissions.length ? <span className={styles.permissionMore}>+{access.permissions.length - visiblePermissions.length} lainnya</span> : null}
-          </div>
-        </Card>
-      </PageContainer>
-    </main>
-  );
+      <div className={styles.desktopContext}>{accountContext}</div>
+      <details className={styles.mobileContext}>
+        <summary>Detail akun & akses <span>{access.role.name}</span></summary>
+        <div className={styles.mobileContextBody}>{accountContext}</div>
+      </details>
+    </PageContainer>
+  </main>;
 }
