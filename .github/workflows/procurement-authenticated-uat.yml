@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           python -m pip install --disable-pip-version-check 'playwright==1.55.0'
-          python -m playwright install --with-deps chromium
+          python -m playwright install chromium
 
       - name: Run authenticated Procurement/AP golden flow
         id: uat
